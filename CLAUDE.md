@@ -49,11 +49,18 @@ Full behavioral spec: see `SPEC.md`. Deployment/infra runbook: see `DEPLOYMENT.m
 ```bash
 npm run dev                  # Next.js dev server
 npm run build                 # production build
-npm run test                   # Vitest unit/component tests
-npm run test:e2e                # Playwright e2e tests
-npm run db:migrate               # Prisma/Drizzle migrations (local)
-npx trigger.dev@latest dev        # local Trigger.dev dev server
+npm run start                  # production server (after build)
+npm run lint                    # ESLint
+npm run format                   # Prettier — write
+npm run format:check              # Prettier — check only
+npm run test                       # Vitest unit/component tests
+npm run test:watch                  # Vitest in watch mode
+npm run test:e2e                     # Playwright e2e tests
+npm run db:migrate                    # Prisma/Drizzle migrations (local)
+npx trigger.dev@latest dev             # local Trigger.dev dev server
 ```
+
+Staged files are auto-linted and formatted on commit via Husky + lint-staged (`.husky/pre-commit` runs `npx lint-staged`); no need to run `lint`/`format` manually before committing.
 
 ## Reference
 
