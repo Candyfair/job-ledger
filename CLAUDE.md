@@ -72,3 +72,4 @@ Staged files are auto-linted and formatted on commit via Husky + lint-staged (`.
 - `DATA_MODEL.md` — persisted schema (tables, fields, relationships) — mirrors the real Prisma/Drizzle schema
 - `SPEC.md` — full behavioral specification (user flows, scraping pipeline, testing scenarios, non-functional requirements, open items)
 - `DEPLOYMENT.md` — deployment targets, secrets, security setup, incident runbook
+- `/design` — validated UI mockups (JPEG). Filenames match screen names (e.g. settings.jpeg, sign-in.jpeg). Source of truth for layout/copy unless a session's transition notes say a screen was revised since export.
