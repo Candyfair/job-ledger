@@ -16,7 +16,7 @@ Full behavioral spec: see `SPEC.md`. Deployment/infra runbook: see `DEPLOYMENT.m
 - Claude API (Haiku) and DeepSeek V4 Flash — both available behind a shared adapter interface (`/lib/extraction`)
 - Postgres, self-hosted in Docker on an existing VPS — see DEPLOYMENT.md
 - Drizzle — chosen over Prisma for serverless fit (no bundled query engine binary, smaller bundle, no cold-start overhead on Vercel/Trigger.dev)
-- Better Auth — email/password, GitHub, Google
+- Better Auth — GitHub, Google (OAuth only; no email/password)
 - Vitest + React Testing Library — unit/component tests; Playwright doubles as the e2e runner for critical flows (already in the stack for scraping)
 
 ## Key architectural decisions — do not deviate without checking SPEC.md

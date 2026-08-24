@@ -5,7 +5,7 @@ Living document. Update it whenever a design decision changes — this is the so
 ## §1. User Roles
 
 - **Anonymous visitor**: can trigger a scrape, choose between the two available models (Claude Haiku / DeepSeek V4 Flash), view the public dashboard. Nothing is persisted for them between visits — no saved job configs, no saved exclusions.
-- **Authenticated user**: everything above, plus persisted job configs, persisted global exclusion keyword list, and settings-page access. Auth via Better Auth (email/password, GitHub, Google) — chosen for auth-provider breadth relevant to a dev-tool audience reviewing the portfolio (GitHub in particular). Email/password sign-up enforces a minimum password length of 12 characters.
+- **Authenticated user**: everything above, plus persisted job configs, persisted global exclusion keyword list, and settings-page access. Auth via Better Auth, OAuth-only (GitHub, Google) — chosen for auth-provider breadth relevant to a dev-tool audience reviewing the portfolio (GitHub in particular), and to avoid the transactional-email infrastructure (verification, password reset) that email/password would require. Accounts are automatically linked across providers by verified e-mail (accountLinking.trustedProviders: ["google", "github"]) — signing in with a different provider under the same verified e-mail attaches to the existing account rather than creating a duplicate.
 
 Auth is scoped to persisting user config only — it never gates triggering a scrape or choosing a model. Fallback plan if cost abuse is ever detected on the public demo: default everyone to the cheapest model and add an auth requirement to trigger at all. Not implemented unless/until needed.
 
@@ -52,8 +52,25 @@ Per included site, per included `JobConfig`:
 
 Both of the following are deterministic code, never an LLM judgment call — the LLM's job stops at producing the normalized fields consumed here (CLAUDE.md decision #1):
 
-- **Exclusion filtering**: a listing's title is checked against the global `ExclusionKeyword` list (exact/substring match, case-insensitive). Match → flagged, not deleted (§3).
+- **Exclusion filtering**: a listing's title is checked against the global
+  `ExclusionKeyword` list using whole-word matching, case-insensitive and
+  diacritic-insensitive (accents stripped before comparison). The title is
+  tokenized on whitespace and punctuation, except that `- / + # . _` are
+  treated as internal token characters (not separators) so compound tech
+  terms stay intact (e.g. `Full-Stack`, `React/Node`, `C++`, `Node.js` are
+  each a single token). A single-word keyword matches an exact token; a
+  multi-word keyword (e.g. `chef de projet`) matches only as a contiguous,
+  in-order phrase within the title's token sequence. No stemming/
+  pluralization in v1 (`Senior` won't match `Seniors`) — revisit if this
+  proves too strict in practice. Match → flagged, not deleted (§3).
 - **Duplicate detection**: listings are compared on `companyNormalized` + `roleCanonical` (both produced by Claude at extraction, §4) using exact/near-exact matching in code. A match sets `duplicateOfListingId`.
+
+Before tokenization, both the title and the keyword pass through a
+normalization step for known spelling variants (e.g. `full-stack` /
+`full stack` / `fullstack` → `fullstack`), defined in
+`lib/filters/keyword-aliases.ts`. The list is deliberately narrow at
+launch — extended incrementally as new cases surface, not an attempt at
+exhaustive coverage.
 
 ### Error handling — broken site markup
 
@@ -78,6 +95,13 @@ To be detailed in the scaffolding session once the extraction schema is finalize
 - `GET /api/scrape/status/:runId` — polled by the frontend for in-app status.
 - Trigger.dev task → writes directly to Postgres on completion (no callback to Next.js needed).
 
+**API (Settings — JobConfig & ExclusionKeyword CRUD, authenticated only)**
+
+- `GET/POST /api/job-configs` — list / create
+- `PATCH /api/job-configs/:id`, `DELETE /api/job-configs/:id`
+- `GET/POST /api/exclusion-keywords` — list / create
+- `DELETE /api/exclusion-keywords/:id`
+
 ### Non-functional
 
 - **Rate limiting**: per-IP counters in Postgres (no dedicated service — see DEPLOYMENT.md), enforced on the trigger endpoint.
@@ -90,7 +114,17 @@ To be detailed in the scaffolding session once the extraction schema is finalize
 
 Concrete cases to cover once each piece is built (see CLAUDE.md's Testing section for tooling/conventions):
 
-- **Exclusion filtering**: a title containing an excluded keyword as a whole word is flagged; a keyword appearing only as a substring of an unrelated word is not (exact matching rule TBD — decide and record here when built).
+- **Exclusion filtering**:
+  - Whole-word match: keyword `PHP` flags `Développeur PHP`.
+  - Connector characters stay attached: keyword `Stack` does NOT flag
+    `Full-Stack Developer` (hyphen keeps it one token); keyword `C++` DOES
+    flag a title containing `C++` as its own token.
+  - Multi-word phrase match: keyword `chef de projet` flags
+    `Chef de Projet Digital` but not the same three words out of order or
+    non-contiguous.
+  - Accent-insensitive: keyword `developpeur` (no accent) flags
+    `Développeur .NET`.
+  - Case-insensitive: keyword `senior` flags `Senior Backend Engineer`.
 - **Duplicate detection**: two listings with identical `companyNormalized`+`roleCanonical` but different raw titles/sites are linked; two genuinely different roles at the same company are not.
 - **Rate limiting**: requests under the per-IP threshold succeed; requests over it are rejected with a clear error, and the counter resets after its window.
 - **Extraction adapter**: both Haiku and DeepSeek adapters return the same JSON shape for the same fixture input (contract test, mocked responses — never live calls in CI).
@@ -99,5 +133,4 @@ Concrete cases to cover once each piece is built (see CLAUDE.md's Testing sectio
 
 ## §9. Open Items — do not assume, ask before implementing
 
-- Exact exclusion-keyword matching rule (whole-word vs. substring) — see §8.
 - Notification-on-completion — explicitly deferred to a possible v2, not v1.
