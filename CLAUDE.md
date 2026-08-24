@@ -25,6 +25,11 @@ Full behavioral spec: see `SPEC.md`. Deployment/infra runbook: see `DEPLOYMENT.m
 2. **LLM calls only through the adapter.** No direct provider SDK calls outside `/lib/extraction` — this is what keeps the dual-model (Haiku/DeepSeek) choice a config switch instead of a rewrite. See SPEC.md §4.
 3. **No paid infrastructure beyond LLM API usage.** Every deployment/security decision (self-hosted DB, mTLS instead of IP allowlisting, native git-based deploys) was made to stay on free tiers. Don't introduce a paid add-on without flagging it first — see DEPLOYMENT.md for the reasoning already worked through.
 
+## Working agreement
+
+- Never run git commit without explicit approval. Present the diff/summary and the exact commit message text, then wait for a go-ahead — every commit, not just structural ones.
+- Self-verify before declaring a step done. After implementing something, re-check it against SPEC.md / DATA_MODEL.md / this file, run the relevant npm run lint / npm run test / npm run build, and explicitly flag any spec ambiguity, gap, or deviation instead of silently resolving it by assumption.
+
 ## Coding conventions
 
 - Variable names and code comments: English, always.
