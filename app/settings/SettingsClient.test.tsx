@@ -130,7 +130,7 @@ describe("SettingsClient", () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText("New exclusion keyword"), {
+    fireEvent.change(screen.getByLabelText("Nouveau mot-clé exclu"), {
       target: { value: "internship" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
@@ -157,7 +157,7 @@ describe("SettingsClient", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove PHP" }));
+    fireEvent.click(screen.getByRole("button", { name: "Supprimer PHP" }));
 
     await waitFor(() => {
       expect(screen.queryByText("PHP")).not.toBeInTheDocument();

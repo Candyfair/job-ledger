@@ -15,6 +15,13 @@
       "when": 1787586697321,
       "tag": "0001_lying_ravenous",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787687250729,
+      "tag": "0002_known_lilandra",
+      "breakpoints": true
     }
   ]
 }

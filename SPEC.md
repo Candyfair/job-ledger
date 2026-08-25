@@ -48,6 +48,14 @@ Per included site, per included `JobConfig`:
 
 **Why two models, chosen at request time, including for anonymous visitors**: keeps cost exposure on the public demo bounded regardless of traffic (both are cheap; DeepSeek Flash is cheaper still off-peak), while giving authenticated users a real choice. Guardrails regardless of model: per-IP rate limiting (§7), per-run volume cap (§7), Anthropic Console spend limit (manual, see DEPLOYMENT.md), kill switch env var. Fallback if abuse is detected anyway: default to the cheapest model + require auth to trigger (see §1).
 
+### Extraction details (decided in Session 3, Indeed + Claude Haiku)
+
+- Raw content from a results page is captured as a single batch — Claude receives every listing on that page in one call and returns a structured array, not one call per listing.
+- `title` is the only required field on extraction output. Every other structured field (`company`, `companyNormalized`, `roleCanonical`, `datePosted`, `salaryRaw`) is nullable — a listing with no visible salary, an anonymous employer, or other missing details is still kept, never dropped for that reason alone.
+- `url` is **not** produced by the LLM. Playwright captures each listing's `href` directly from the DOM and tags it with a local `listingId`; Claude receives and echoes back that same `listingId` for each extracted entry, and code re-attaches the real URL afterward by matching on that id.
+- Lookback window filtering stays deterministic code after extraction, never an LLM decision (CLAUDE.md decision #1). A listing with no usable date signal at all (not even a relative one) is excluded from that run — code does not guess whether it fits the requested window.
+- Partial extraction failure: if one entry in a batch fails schema validation (malformed JSON for that entry, missing title), that entry is dropped alone (logged as a warning) — never the whole batch. A Playwright-level failure (selector not found) remains a site-wide failure, handled as already specified above (`SiteStatus`).
+
 ## §5. Filtering & Deduplication
 
 Both of the following are deterministic code, never an LLM judgment call — the LLM's job stops at producing the normalized fields consumed here (CLAUDE.md decision #1):
@@ -63,7 +71,7 @@ Both of the following are deterministic code, never an LLM judgment call — the
   in-order phrase within the title's token sequence. No stemming/
   pluralization in v1 (`Senior` won't match `Seniors`) — revisit if this
   proves too strict in practice. Match → flagged, not deleted (§3).
-- **Duplicate detection**: listings are compared on `companyNormalized` + `roleCanonical` (both produced by Claude at extraction, §4) using exact/near-exact matching in code. A match sets `duplicateOfListingId`.
+- **Duplicate detection**: listings are compared on `companyNormalized` + `roleCanonical` (both produced by Claude at extraction, §4) using exact/near-exact matching in code. A match sets `duplicateOfListingId`. Two listings where both fields are `null` must never be treated as duplicates of each other, even though their comparison keys are technically equal (null == null) — flagged here for Session 5's implementation, nothing to implement yet.
 
 Before tokenization, both the title and the keyword pass through a
 normalization step for known spelling variants (e.g. `full-stack` /
@@ -108,6 +116,7 @@ To be detailed in the scaffolding session once the extraction schema is finalize
 - **Volume cap**: 50 listings maximum par run.
 - **Scraping politeness**: randomized inter-request delay, limited per-site concurrency, default Chromium user-agent.
 - **Security**: see DEPLOYMENT.md for the full mTLS + fail2ban setup.
+- **UI language**: French throughout.
 - **License**: MIT.
 
 ## §8. Testing Scenarios
@@ -134,3 +143,4 @@ Concrete cases to cover once each piece is built (see CLAUDE.md's Testing sectio
 ## §9. Open Items — do not assume, ask before implementing
 
 - Notification-on-completion — explicitly deferred to a possible v2, not v1.
+- UI translation debt: auth pages and settings page (built in Session 2) are currently in English, contradicting the Session 1 French decision. Needs a dedicated pass — not scheduled yet, not in scope for Session 3.

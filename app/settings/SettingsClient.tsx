@@ -212,7 +212,7 @@ export function SettingsClient({
         <section className="flex flex-col gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-semibold">Exclusion keywords</h2>
+              <h2 className="text-lg font-semibold">Mots-clés exclus</h2>
               <span className="rounded bg-black px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-white">
                 GLOBAL
               </span>
@@ -233,7 +233,7 @@ export function SettingsClient({
                 <button
                   type="button"
                   onClick={() => handleDeleteKeyword(k.id)}
-                  aria-label={`Remove ${k.keyword}`}
+                  aria-label={`Supprimer ${k.keyword}`}
                   className="text-red-600 hover:text-red-900"
                 >
                   ×
@@ -252,8 +252,8 @@ export function SettingsClient({
             <input
               value={newKeyword}
               onChange={(e) => setNewKeyword(e.target.value)}
-              placeholder="e.g. internship, junior"
-              aria-label="New exclusion keyword"
+              placeholder="ex. stage, junior"
+              aria-label="Nouveau mot-clé exclu"
               className="flex-1 rounded border border-zinc-300 px-3 py-2 text-sm"
             />
             <button
