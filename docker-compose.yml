@@ -1,0 +1,18 @@
+# Local development only. Production Postgres runs self-hosted on the VPS
+# with mTLS — see DEPLOYMENT.md. This service has no mTLS: a local
+# connection on localhost doesn't cross the network boundary mTLS protects.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: job_ledger
+      POSTGRES_PASSWORD: job_ledger
+      POSTGRES_DB: job_ledger
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+volumes:
+  postgres-data:

@@ -51,6 +51,26 @@ Both Vercel's and Trigger.dev's static-outbound-IP features are paid-only (Verce
 - A GitHub Actions workflow opens an SSH tunnel to the VPS (dedicated deploy key) and runs migrations (`prisma migrate deploy` or Drizzle equivalent) through the tunnel on push to `main`.
 - Workflow file: `.github/workflows/migrate.yml` (to be written in Session 1).
 
+## Local Development Database
+
+The root `docker-compose.yml` runs a plain local Postgres — **no mTLS**. mTLS
+authenticates a caller crossing the open internet with a dynamic IP (Vercel/
+Trigger.dev → VPS); a connection from `next dev` to `localhost` never leaves
+the machine, so there's nothing for it to protect against there.
+
+- `docker compose up -d` starts it (`job_ledger` user/db/password, port 5432).
+- `.env.local`'s `DATABASE_URL` points at it directly;
+  `DATABASE_CLIENT_CERT`/`DATABASE_CLIENT_KEY` stay **empty** on purpose —
+  that's the expected local-dev state, not a missing value.
+- `lib/db.ts` picks the connection mode at runtime: mTLS when
+  `DATABASE_CLIENT_CERT`/`DATABASE_CLIENT_KEY` are set (production), a plain
+  connection string otherwise (local dev). No separate code path to maintain.
+- `npm run db:generate` / `npm run db:migrate` (Drizzle Kit) generate and
+  apply migrations against whichever `DATABASE_URL` is active.
+- Each machine/installer runs its own independent local Postgres — schema
+  stays in sync via the versioned migrations in `/drizzle/migrations` (git);
+  dev data does not sync between machines, and shouldn't.
+
 ## Secrets Management
 
 | Secret                                                         | Where it's needed                                                                  |

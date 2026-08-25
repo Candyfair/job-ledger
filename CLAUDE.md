@@ -35,9 +35,11 @@ Full behavioral spec: see `SPEC.md`. Deployment/infra runbook: see `DEPLOYMENT.m
 - Variable names and code comments: English, always.
 - File/folder structure:
   - `/app` — Next.js App Router pages, layouts, API routes
+  - `/components` — shared React components, grouped by feature area (e.g. `/components/auth`, `/components/settings`)
   - `/trigger` — Trigger.dev task definitions, one per site + shared extraction task
   - `/lib/extraction` — LLM adapters (Claude, DeepSeek) + prompts
   - `/lib/dedup`, `/lib/filters` — deterministic logic (see decision #1 — highest-priority unit test targets)
+  - `/lib/db.ts`, `/lib/auth.ts`, `/lib/auth-client.ts` — Drizzle client and Better Auth server/client config
   - `/prisma` or `/drizzle` — schema + migrations
 - Static/config-shaped content (default exclusion keywords, site definitions, etc.): always in a typed data file, never hardcoded inline.
 - Tests live alongside the code they cover (`*.test.ts`), not in a separate mirror tree.
@@ -61,7 +63,8 @@ npm run format:check              # Prettier — check only
 npm run test                       # Vitest unit/component tests
 npm run test:watch                  # Vitest in watch mode
 npm run test:e2e                     # Playwright e2e tests
-npm run db:migrate                    # Prisma/Drizzle migrations (local)
+npm run db:generate                  # generate Drizzle migration SQL from schema changes
+npm run db:migrate                    # apply Drizzle migrations (local)
 npx trigger.dev@latest dev             # local Trigger.dev dev server
 ```
 
