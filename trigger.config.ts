@@ -11,6 +11,14 @@ export default defineConfig({
   // site-level hang (which should hit the SiteStatus failure path instead).
   maxDuration: 600,
   build: {
+    external: [
+      "chromium-bidi/lib/cjs/bidiMapper/BidiMapper",
+      "chromium-bidi/lib/cjs/cdp/CdpConnection",
+      "playwright-core",
+      "playwright",
+      "chromium-bidi",
+    ],
+    experimental_autoDetectExternal: true,
     extensions: [playwright()],
   },
 });

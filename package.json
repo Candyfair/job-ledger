@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "echo 'Playwright e2e not configured yet — see CLAUDE.md' && exit 0",
-    "test:scrape:indeed": "tsx scripts/test-scrape-indeed.ts",
+    "test:scrape:indeed": "tsx --env-file=.env.local scripts/test-scrape-indeed.ts",
+    "test:scrape:apec": "tsx --env-file=.env.local scripts/test-scrape-apec.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "prepare": "husky"

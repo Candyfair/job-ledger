@@ -1,3 +1,6 @@
+// THROWAWAY PRE-SESSION-4 SPIKE — proves the Trigger.dev / SiteStatus write
+// path end to end. Not the real multi-site Apec.fr implementation.
+
 import { task } from "@trigger.dev/sdk/v3";
 import { chromium } from "playwright";
 import { eq } from "drizzle-orm";
@@ -10,18 +13,18 @@ import {
   type LookbackWindow,
 } from "@/lib/extraction/lookback-window";
 import {
-  captureIndeedPage,
+  captureApecPage,
   buildDelimitedContent,
   randomDelayMs,
   sleep,
-  IndeedBlockedError,
-} from "@/lib/scraping/indeed-scraper";
+  ApecBlockedError,
+} from "@/lib/scraping/apec-scraper";
 
 const VOLUME_CAP = 50; // SPEC.md §7
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-export interface ScrapeIndeedPayload {
+export interface ScrapeApecPayload {
   jobConfigId: string;
   lookback: LookbackWindow;
   // No trigger form exists until Session 5 — a run is either tied to the
@@ -34,7 +37,7 @@ async function markSiteFailed(message: string) {
   await db
     .insert(siteStatus)
     .values({
-      site: "indeed",
+      site: "apec",
       active: false,
       lastErrorAt: new Date(),
       lastErrorNote: message,
@@ -45,9 +48,9 @@ async function markSiteFailed(message: string) {
     });
 }
 
-export const scrapeIndeed = task({
-  id: "scrape-indeed",
-  run: async (payload: ScrapeIndeedPayload) => {
+export const scrapeApec = task({
+  id: "scrape-apec",
+  run: async (payload: ScrapeApecPayload) => {
     const [config] = await db
       .select()
       .from(jobConfig)
@@ -97,7 +100,7 @@ export const scrapeIndeed = task({
           await sleep(randomDelayMs());
         }
 
-        const { listings: captured, hasMore: more } = await captureIndeedPage(
+        const { listings: captured, hasMore: more } = await captureApecPage(
           page,
           { keywords, location, lookback, page: pageNum },
         );
@@ -125,11 +128,11 @@ export const scrapeIndeed = task({
       }
     } catch (error) {
       await browser.close();
-      // Selector timeout, navigation failure, or a detected bot-verification
-      // challenge are all the same site-wide failure (SPEC.md §5) — no
+      // Selector timeout, navigation failure, or a detected unrecognized
+      // page shape are all the same site-wide failure (SPEC.md §5) — no
       // anti-bot circumvention, just mark the site inactive and surface it.
       const message =
-        error instanceof IndeedBlockedError
+        error instanceof ApecBlockedError
           ? error.message
           : error instanceof Error
             ? error.message
@@ -147,7 +150,7 @@ export const scrapeIndeed = task({
         lookbackWindowType: lookback.type,
         lookbackSince,
         modelUsed: "claude_haiku",
-        sitesIncluded: ["indeed"],
+        sitesIncluded: ["apec"],
         jobConfigsIncluded: [payload.jobConfigId],
         status: anyPageExtractionFailed ? "partial_failure" : "completed",
       })
@@ -157,7 +160,7 @@ export const scrapeIndeed = task({
       await db.insert(listing).values(
         collected.map((item) => ({
           scrapeRunId: run.id,
-          site: "indeed" as const,
+          site: "apec" as const,
           title: item.title,
           company: item.company,
           companyNormalized: item.companyNormalized,
