@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## Project overview
 
-Jobs Scraping — an open-source, on-demand job-listing aggregator across French job boards (Welcome to the Jungle, Indeed, Apec.fr, HelloWork), built to demonstrate agentic development with the Claude API. Playwright handles navigation deterministically; Claude (or DeepSeek V4 Flash, offered as an alternative) only structures raw listing content into normalized JSON. Results are deduplicated and filterable in a dashboard.
+Jobs Scraping — an open-source, on-demand job-listing aggregator across French job boards (Welcome to the Jungle, Apec.fr, HelloWork), built to demonstrate agentic development with the Claude API. Playwright handles navigation deterministically; Claude (or DeepSeek V4 Flash, offered as an alternative) only structures raw listing content into normalized JSON. Results are deduplicated and filterable in a dashboard.
 
 Full behavioral spec: see `SPEC.md`. Deployment/infra runbook: see `DEPLOYMENT.md`.
 
@@ -50,7 +50,7 @@ TypeScript already documents shapes — JSDoc here is for intent, rationale, and
 
 Three tiers, matching the priority already set by decision #1:
 
-- **Tier 1 — required, full documentation**: `/lib/filters`, `/lib/dedup`, `/lib/extraction`, `/lib/scraping`. Deterministic logic and LLM adapters — document the contract, non-obvious behavior, and known gotchas (e.g. Trigger.dev payload fields crossing a JSON serialization boundary arrive as strings, not typed values — see the `since: Date` fix in `scrape-apec.ts`/`scrape-indeed.ts`).
+- **Tier 1 — required, full documentation**: `/lib/filters`, `/lib/dedup`, `/lib/extraction`, `/lib/scraping`. Deterministic logic and LLM adapters — document the contract, non-obvious behavior, and known gotchas (e.g. Trigger.dev payload fields crossing a JSON serialization boundary arrive as strings, not typed values — see the `since: Date` fix in `scrape-apec.ts`).
 - **Tier 2 — required, lighter**: `/trigger`, `/app/api`. Document side effects (which tables a task writes to, under what conditions) and failure paths, not every parameter.
 - **Tier 3 — case by case**: React components. Only when behavior isn't obvious from props/name (e.g. a multi-state toggle).
 

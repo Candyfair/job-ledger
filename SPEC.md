@@ -11,9 +11,9 @@ Auth is scoped to persisting user config only — it never gates triggering a sc
 
 ## §2. Sites in Scope
 
-Welcome to the Jungle, Indeed, Apec.fr, HelloWork. Apec's "partner sites" checkbox is deliberately left unchecked (overlaps with HelloWork, low relevance otherwise).
+Welcome to the Jungle, Apec.fr, HelloWork. Apec's "partner sites" checkbox is deliberately left unchecked (overlaps with HelloWork, low relevance otherwise).
 
-**LinkedIn is excluded.** Its ToS explicitly prohibits automated scraping, even via legitimate tools, and a LinkedIn account has real professional value not worth risking.
+**LinkedIn and Indeed are excluded.** Both ToS explicitly prohibit automated/bot access to the site. For Indeed specifically: indeed.com/legal (Section A.3.5) confirms automating the Indeed Apply flow is prohibited, and independent sources report a broader site-wide scraping prohibition — consistent with the persistent Cloudflare blocking observed in Session 4 even after a genuine 15h cooldown, which pointed to deliberate enforcement rather than simple rate-limiting. Treated identically to LinkedIn: not worth the legal/reputational exposure on a recruiter-facing project. No further anti-detection engineering (stealth plugins, fingerprint spoofing) was attempted once the ToS signal was confirmed — that would cross from politeness into deliberate circumvention of a security measure enforcing a contractual prohibition.
 
 ## §3. User Flows
 

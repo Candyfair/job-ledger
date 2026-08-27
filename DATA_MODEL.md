@@ -28,7 +28,7 @@ One row per configured job search.
 
 Global per-site availability — a markup break affects that site's scraper for every search running against it, not one job config in isolation. One row per supported site, shared across all users (including anonymous).
 
-- `site` (Welcome to the Jungle / Indeed / Apec.fr / HelloWork)
+- `site` (Welcome to the Jungle / Apec.fr / HelloWork)
 - `active` (boolean, default `true`; auto-set to `false` when that site's Playwright task fails — see SPEC.md §5)
 - `lastErrorAt`, `lastErrorNote` (optional, feeds the "needs review" message)
 
