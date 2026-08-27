@@ -12,6 +12,13 @@ import type { LookbackWindow } from "@/lib/extraction/lookback-window";
 //   lib/extraction/lookback-window.ts).
 const RESULTS_PER_PAGE = 10;
 
+/**
+ * Builds an fr.indeed.com search-results URL. `fromage` (days-since-posted)
+ * is set for the `24h`/`3d` lookback cases only — `since_date` intentionally
+ * omits it, since `sort=date` was found unreliable (sponsored listings stay
+ * pinned regardless), so that case paginates to the volume cap and relies on
+ * `isWithinLookbackWindow` to filter post-extraction instead.
+ */
 export function buildIndeedSearchUrl(params: {
   keywords: string;
   location?: string | null;

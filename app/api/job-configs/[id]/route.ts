@@ -4,6 +4,12 @@ import { db } from "@/lib/db";
 import { jobConfig } from "@/drizzle/schema";
 import { requireSession } from "@/lib/require-session";
 
+/**
+ * Partially updates a job config owned by the caller — only fields present
+ * in the body are changed. Requires a session (401 otherwise); scoped by
+ * both `id` and `userId` so updating another user's config 404s rather than
+ * succeeding. 400 on an invalid field value, 404 if no matching row.
+ */
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -62,6 +68,11 @@ export async function PATCH(
   return NextResponse.json(updated);
 }
 
+/**
+ * Deletes one job config owned by the caller. Requires a session (401
+ * otherwise); scoped by both `id` and `userId` so deleting another user's
+ * config 404s rather than succeeding. 404 if no matching row.
+ */
 export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },

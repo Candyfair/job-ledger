@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { jobConfig } from "@/drizzle/schema";
 import { requireSession } from "@/lib/require-session";
 
+/** Lists the caller's job configs. Requires a session; 401 otherwise. */
 export async function GET() {
   const session = await requireSession();
   if (!session) {
@@ -19,6 +20,11 @@ export async function GET() {
   return NextResponse.json(rows);
 }
 
+/**
+ * Creates a job config owned by the caller. Requires a session (401
+ * otherwise); 400 if `title` is missing/blank, `keywords` isn't a string
+ * array, or `location` is present but not a string.
+ */
 export async function POST(request: Request) {
   const session = await requireSession();
   if (!session) {

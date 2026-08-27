@@ -32,6 +32,13 @@ Absence is not an error. An anonymous employer, a missing salary, or no visible 
 
 Return your answer as a single JSON object matching the required schema — no prose, no markdown fences, nothing outside the JSON.`;
 
+/**
+ * Wraps the pre-delimited `<<<LISTING id="...">>>` blocks with the reference
+ * date the model must treat as "today" when resolving relative French date
+ * phrases (see {@link EXTRACTION_SYSTEM_PROMPT}). `delimitedContent` is
+ * built by each site's scraper (`buildDelimitedContent` in
+ * `/lib/scraping/*-scraper.ts`), never assembled here.
+ */
 export function buildExtractionUserMessage(
   referenceDateISO: string,
   delimitedContent: string,

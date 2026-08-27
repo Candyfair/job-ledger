@@ -24,6 +24,13 @@ import type { LookbackWindow } from "@/lib/extraction/lookback-window";
 // listings will leak into results. Must be researched properly before this
 // becomes the real Apec.fr implementation.
 
+/**
+ * Builds an Apec.fr search-results URL. Unlike Indeed's `fromage` param, no
+ * "posted since" query param was found during live inspection (see the file
+ * header) — `params.lookback` is accepted for signature parity with
+ * `buildIndeedSearchUrl` but has no effect here; lookback filtering for
+ * Apec relies entirely on `isWithinLookbackWindow` post-extraction.
+ */
 export function buildApecSearchUrl(params: {
   keywords: string;
   location?: string | null;

@@ -47,9 +47,14 @@ const COOKIE_REFUSE_SELECTOR = "#didomi-notice-disagree-button";
 // distinguish "genuinely empty" from "content never rendered" below.
 const NO_RESULTS_TEXT = "Aucune offre ne correspond";
 
+/**
+ * Dismisses the Didomi GDPR consent modal, which has no Indeed equivalent
+ * and blocks/overlays the page on first load. The banner is injected
+ * client-side and may not exist yet right after `domcontentloaded` — this
+ * is a bounded wait, not fatal if the banner never appears (e.g. a repeat
+ * visit where consent was already recorded).
+ */
 async function dismissCookieConsent(page: Page): Promise<void> {
-  // The Didomi banner is injected client-side and may not exist yet right
-  // after domcontentloaded — bounded wait, not fatal if it never appears.
   const refuseButton = page.locator(COOKIE_REFUSE_SELECTOR);
   await refuseButton
     .waitFor({ state: "visible", timeout: 8000 })
@@ -59,11 +64,16 @@ async function dismissCookieConsent(page: Page): Promise<void> {
   }
 }
 
-// Apec.fr is an Angular SPA — cards are rendered client-side after
-// domcontentloaded fires, unlike Indeed's server-rendered cards. Waits for
-// either a listing card or the confirmed "no results" message to appear,
-// whichever comes first; if neither shows up in time, the page shape is
-// unrecognized (interstitial, layout change, or an unknown block page).
+/**
+ * Waits for Apec's search results to actually exist in the DOM. Apec.fr is
+ * an Angular SPA — cards are rendered client-side after `domcontentloaded`
+ * fires, unlike Indeed's server-rendered cards, so `page.goto`'s own wait
+ * condition is not enough here. Races a listing card against the confirmed
+ * "no results" text, whichever appears first; if neither shows up within
+ * the timeout, the caller (`captureApecPage`) treats the page shape as
+ * unrecognized (interstitial, layout change, or an unknown block page) and
+ * throws {@link ApecBlockedError}.
+ */
 async function waitForResultsToRender(page: Page): Promise<void> {
   await Promise.race([
     page.locator(LISTING_CARD_SELECTOR).first().waitFor({
@@ -77,15 +87,31 @@ async function waitForResultsToRender(page: Page): Promise<void> {
   ]);
 }
 
+/** Awaits a plain timeout — used between page fetches for scraping politeness (SPEC.md §7). */
 export async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Randomized inter-request delay for scraping politeness (SPEC.md §7).
+/** Randomized inter-request delay for scraping politeness (SPEC.md §7). */
 export function randomDelayMs(min = 1500, max = 3500): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+/**
+ * Navigates to and captures one page of Apec.fr search results. Differs
+ * from the Indeed pattern (`captureIndeedPage`) in two ways specific to
+ * Apec: it dismisses the Didomi cookie-consent modal after navigation, and
+ * it waits for client-rendered cards ({@link waitForResultsToRender})
+ * instead of relying on `domcontentloaded` alone, since Apec.fr is an
+ * Angular SPA.
+ *
+ * Throws {@link ApecBlockedError} — never retried or worked around, per the
+ * no-anti-bot-circumvention policy — when the results never render in time,
+ * or when cards are counted but the wrapping-anchor structure they're read
+ * from doesn't match (an unrecognized page shape either way). Callers
+ * (`/trigger/scrape-apec.ts`) treat this as a site-wide failure and write it
+ * to `SiteStatus`.
+ */
 export async function captureApecPage(
   page: Page,
   params: {
@@ -150,6 +176,13 @@ export async function captureApecPage(
   return { listings, hasMore };
 }
 
+/**
+ * Serializes captured cards into the `<<<LISTING id="...">>>`-delimited
+ * format the extraction adapter's system prompt expects (see
+ * `EXTRACTION_SYSTEM_PROMPT` in `/lib/extraction/prompt.ts`). Same format as
+ * Indeed's `buildDelimitedContent` — kept as a per-site duplicate rather
+ * than a shared helper since each site's `Captured*Listing` type differs.
+ */
 export function buildDelimitedContent(listings: CapturedApecListing[]): string {
   return listings
     .map(

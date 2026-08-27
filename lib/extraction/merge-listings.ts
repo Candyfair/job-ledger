@@ -9,10 +9,13 @@ export interface ListingWithUrl extends ExtractedListing {
   url: string;
 }
 
-// The LLM never sees or produces a real URL (SPEC.md §4) — this re-attaches
-// the Playwright-captured href by matching on the local listingId. An
-// extracted entry with no matching captured URL is dropped, never written
-// with an empty url (Listing.url is NOT NULL).
+/**
+ * The LLM never sees or produces a real URL (SPEC.md §4) — this re-attaches
+ * the Playwright-captured href by matching on the local `listingId`. An
+ * extracted entry with no matching captured URL is silently dropped (logged
+ * via `console.warn`), never written with an empty `url` — `Listing.url` is
+ * `NOT NULL` in the schema.
+ */
 export function mergeListingsWithUrls(
   extracted: ExtractedListing[],
   captured: CapturedListing[],

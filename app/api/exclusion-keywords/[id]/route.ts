@@ -4,6 +4,11 @@ import { db } from "@/lib/db";
 import { exclusionKeyword } from "@/drizzle/schema";
 import { requireSession } from "@/lib/require-session";
 
+/**
+ * Deletes one exclusion keyword owned by the caller. Requires a session
+ * (401 otherwise); scoped by both `id` and `userId` so deleting another
+ * user's keyword 404s rather than succeeding. 404 if no matching row.
+ */
 export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },

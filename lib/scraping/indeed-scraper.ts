@@ -30,6 +30,7 @@ const LISTING_CARD_SELECTOR = ".job_seen_beacon";
 const TITLE_ANCHOR_SELECTOR = "a.jcs-JobTitle";
 const NEXT_PAGE_SELECTOR = "a[data-testid='pagination-page-next']";
 
+/** Matches known Indeed bot-verification challenge page copy (Cloudflare-style interstitial). */
 function isBlockedPageText(bodyText: string): boolean {
   return (
     bodyText.includes("Additional Verification Required") ||
@@ -38,15 +39,28 @@ function isBlockedPageText(bodyText: string): boolean {
   );
 }
 
+/** Awaits a plain timeout — used between page fetches for scraping politeness (SPEC.md §7). */
 export async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Randomized inter-request delay for scraping politeness (SPEC.md §7).
+/** Randomized inter-request delay for scraping politeness (SPEC.md §7). */
 export function randomDelayMs(min = 1500, max = 3500): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+/**
+ * Navigates to and captures one page of fr.indeed.com search results.
+ * Relies on `domcontentloaded` alone (Indeed's cards are server-rendered,
+ * unlike Apec.fr's client-rendered Angular SPA — contrast
+ * `captureApecPage`), then checks the rendered body text for known
+ * bot-verification challenge strings ({@link isBlockedPageText}).
+ *
+ * Throws {@link IndeedBlockedError} — never retried or worked around, per
+ * the no-anti-bot-circumvention policy — when a challenge page is detected.
+ * Callers (`/trigger/scrape-indeed.ts`) treat this as a site-wide failure
+ * and write it to `SiteStatus`.
+ */
 export async function captureIndeedPage(
   page: Page,
   params: {
@@ -107,6 +121,13 @@ export async function captureIndeedPage(
   return { listings, hasMore };
 }
 
+/**
+ * Serializes captured cards into the `<<<LISTING id="...">>>`-delimited
+ * format the extraction adapter's system prompt expects (see
+ * `EXTRACTION_SYSTEM_PROMPT` in `/lib/extraction/prompt.ts`). Same format as
+ * Apec's `buildDelimitedContent` — kept as a per-site duplicate rather than
+ * a shared helper since each site's `Captured*Listing` type differs.
+ */
 export function buildDelimitedContent(
   listings: CapturedIndeedListing[],
 ): string {

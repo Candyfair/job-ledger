@@ -40,10 +40,23 @@ const EXTRACTION_JSON_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-// Haiku 4.5 has no adaptive thinking / effort support (effort errors on this
-// model), so both are omitted entirely — temperature is still accepted on
-// this tier and set to 0 for deterministic extraction.
+/**
+ * Claude Haiku implementation of {@link ExtractionAdapter}. Must return the
+ * same JSON shape as any other adapter (e.g. the future DeepSeek one) for
+ * the same fixture input — see SPEC.md §8's extraction adapter contract
+ * test. Haiku 4.5 has no adaptive thinking / effort support (effort errors
+ * on this model), so both are omitted entirely — temperature is still
+ * accepted on this tier and set to 0 for deterministic extraction.
+ */
 export class ClaudeHaikuAdapter implements ExtractionAdapter {
+  /**
+   * Structures raw delimited listing text into {@link ExtractedListing}s.
+   * Never throws on a model-side failure (refusal, `max_tokens` cutoff,
+   * unparseable JSON, or an individually-invalid listing entry) — each case
+   * is logged via `console.warn` and degrades to dropping that listing (or
+   * returning `[]` for a whole-batch failure), leaving the caller to treat
+   * the run as a partial success rather than aborting it.
+   */
   async extractListings(rawContent: string): Promise<ExtractedListing[]> {
     const referenceDate = new Date().toISOString().slice(0, 10);
 

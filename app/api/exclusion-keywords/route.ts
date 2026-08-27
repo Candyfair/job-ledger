@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { exclusionKeyword } from "@/drizzle/schema";
 import { requireSession } from "@/lib/require-session";
 
+/** Lists the caller's exclusion keywords. Requires a session; 401 otherwise. */
 export async function GET() {
   const session = await requireSession();
   if (!session) {
@@ -19,6 +20,10 @@ export async function GET() {
   return NextResponse.json(rows);
 }
 
+/**
+ * Creates an exclusion keyword owned by the caller. Requires a session (401
+ * otherwise); 400 if `keyword` is missing or blank after trimming.
+ */
 export async function POST(request: Request) {
   const session = await requireSession();
   if (!session) {

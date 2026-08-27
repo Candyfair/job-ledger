@@ -30,6 +30,15 @@ export interface ScrapeIndeedPayload {
   userId?: string | null;
 }
 
+/**
+ * Writes a site-wide failure to `SiteStatus` (upsert on `site`), flipping
+ * `active` to `false` and recording the error. Called only from the task's
+ * `catch` block below, on any error thrown out of the scrape loop
+ * (`IndeedBlockedError` or otherwise) — a page-level extraction failure
+ * (empty adapter result) does NOT trigger this; that's tracked instead via
+ * `anyPageExtractionFailed` and surfaces as `ScrapeRun.status =
+ * "partial_failure"`.
+ */
 async function markSiteFailed(message: string) {
   await db
     .insert(siteStatus)
@@ -45,6 +54,23 @@ async function markSiteFailed(message: string) {
     });
 }
 
+/**
+ * Scrapes Indeed for one job config and writes the result. Side effects:
+ * - `SiteStatus` (upsert, via `markSiteFailed`): written only when the
+ *   scrape loop throws (selector timeout, navigation failure, or a detected
+ *   bot-verification challenge via `IndeedBlockedError`) — a site-wide
+ *   failure, never for a single page's extraction coming back empty.
+ * - `ScrapeRun` (insert): always written on a non-throwing run; `status` is
+ *   `"partial_failure"` if any page's extraction returned no listings,
+ *   `"completed"` otherwise.
+ * - `Listing` (bulk insert): written only when `collected.length > 0`.
+ *
+ * `payload.lookback.since` is coerced back into a `Date` before use — see
+ * the comment at its assignment below for why (Trigger.dev payloads that
+ * cross a JSON serialization boundary lose the `Date` type; `task()` has no
+ * schema validation to catch this). The same fix is applied in
+ * `scrape-apec.ts`.
+ */
 export const scrapeIndeed = task({
   id: "scrape-indeed",
   run: async (payload: ScrapeIndeedPayload) => {
