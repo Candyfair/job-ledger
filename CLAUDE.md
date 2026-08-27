@@ -44,6 +44,18 @@ Full behavioral spec: see `SPEC.md`. Deployment/infra runbook: see `DEPLOYMENT.m
 - Static/config-shaped content (default exclusion keywords, site definitions, etc.): always in a typed data file, never hardcoded inline.
 - Tests live alongside the code they cover (`*.test.ts`), not in a separate mirror tree.
 
+### Documentation (JSDoc)
+
+TypeScript already documents shapes — JSDoc here is for intent, rationale, and gotchas, not for re-stating types. Avoid `@param {string} x - the x` when the type is already visible in the signature; prefer capturing _why_, edge cases, and side effects.
+
+Three tiers, matching the priority already set by decision #1:
+
+- **Tier 1 — required, full documentation**: `/lib/filters`, `/lib/dedup`, `/lib/extraction`, `/lib/scraping`. Deterministic logic and LLM adapters — document the contract, non-obvious behavior, and known gotchas (e.g. Trigger.dev payload fields crossing a JSON serialization boundary arrive as strings, not typed values — see the `since: Date` fix in `scrape-apec.ts`/`scrape-indeed.ts`).
+- **Tier 2 — required, lighter**: `/trigger`, `/app/api`. Document side effects (which tables a task writes to, under what conditions) and failure paths, not every parameter.
+- **Tier 3 — case by case**: React components. Only when behavior isn't obvious from props/name (e.g. a multi-state toggle).
+
+Enforced via `eslint-plugin-jsdoc`, scoped to Tier 1 and Tier 2 file globs only (see `eslint.config.js`) — not project-wide, to avoid incentivizing empty boilerplate JSDoc on trivial code.
+
 ## Testing
 
 - Unit tests (Vitest): prioritize the deterministic logic called out in decision #1 — exclusion-keyword matching, duplicate-detection comparison, rate-limit counter logic — plus the extraction adapter interface (mocked provider responses, never live API calls).
