@@ -71,8 +71,7 @@ async function markSiteFailed(message: string) {
  * `payload.lookback.since` is coerced back into a `Date` before use — see
  * the comment at its assignment below for why (Trigger.dev payloads that
  * cross a JSON serialization boundary lose the `Date` type; `task()` has no
- * schema validation to catch this). The same fix is applied in
- * `scrape-indeed.ts`.
+ * schema validation to catch this).
  */
 export const scrapeApec = task({
   id: "scrape-apec",

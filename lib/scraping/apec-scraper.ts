@@ -21,26 +21,26 @@ export interface ApecPageResult {
 // or worked around (no anti-bot circumvention, per policy). No Cloudflare-
 // style bot-verification wall was observed against Apec.fr during this
 // spike's live inspection, so detection here is generalized (interstitial /
-// listing selector unexpectedly missing) rather than a specific string match
-// like Indeed's, per the plan's instruction.
+// listing selector unexpectedly missing) rather than a specific string
+// match against known challenge-page copy.
 export class ApecBlockedError extends Error {}
 
-// Confirmed via live inspection on 2026-08-26 (apec.fr). Structurally
-// different from Indeed: the clickable `<a>` wraps the ENTIRE card
-// (container-result > div > a > apec-recherche-resultat > .card-offer)
-// rather than nesting a title-only anchor inside the card, so the href is
-// read off the wrapping anchor, not a child. Company/title/salary/location/
-// date are captured as one raw text blob per card (not per-field selectors)
-// and left for Claude to structure, consistent with "Playwright captures,
-// Claude structures" (CLAUDE.md decision #1).
+// Confirmed via live inspection on 2026-08-26 (apec.fr). The clickable `<a>`
+// wraps the ENTIRE card (container-result > div > a >
+// apec-recherche-resultat > .card-offer) rather than nesting a title-only
+// anchor inside the card, so the href is read off the wrapping anchor, not
+// a child. Company/title/salary/location/date are captured as one raw text
+// blob per card (not per-field selectors) and left for Claude to structure,
+// consistent with "Playwright captures, Claude structures" (CLAUDE.md
+// decision #1).
 const RESULT_LINK_SELECTOR = ".container-result > div > a";
 const LISTING_CARD_SELECTOR = ".card-offer";
 // The trailing <li class="page-item"> in the pagination nav contains an
 // (icon-only, textless) <a> only when a next page exists — confirmed empty
 // on the true last page (page 22 of 22) during live inspection.
 const NEXT_PAGE_SELECTOR = "ul.pagination > li.page-item:last-child > a";
-// Didomi GDPR consent modal — blocks/overlays the page on first load. No
-// Indeed equivalent; must be dismissed before any listing interaction.
+// Didomi GDPR consent modal — blocks/overlays the page on first load, must
+// be dismissed before any listing interaction.
 const COOKIE_REFUSE_SELECTOR = "#didomi-notice-disagree-button";
 // Shown instead of any cards when a search genuinely has zero matches —
 // confirmed via live inspection against a nonsense keyword. Used only to
@@ -48,11 +48,11 @@ const COOKIE_REFUSE_SELECTOR = "#didomi-notice-disagree-button";
 const NO_RESULTS_TEXT = "Aucune offre ne correspond";
 
 /**
- * Dismisses the Didomi GDPR consent modal, which has no Indeed equivalent
- * and blocks/overlays the page on first load. The banner is injected
- * client-side and may not exist yet right after `domcontentloaded` — this
- * is a bounded wait, not fatal if the banner never appears (e.g. a repeat
- * visit where consent was already recorded).
+ * Dismisses the Didomi GDPR consent modal, which blocks/overlays the page
+ * on first load. The banner is injected client-side and may not exist yet
+ * right after `domcontentloaded` — this is a bounded wait, not fatal if the
+ * banner never appears (e.g. a repeat visit where consent was already
+ * recorded).
  */
 async function dismissCookieConsent(page: Page): Promise<void> {
   const refuseButton = page.locator(COOKIE_REFUSE_SELECTOR);
@@ -67,12 +67,12 @@ async function dismissCookieConsent(page: Page): Promise<void> {
 /**
  * Waits for Apec's search results to actually exist in the DOM. Apec.fr is
  * an Angular SPA — cards are rendered client-side after `domcontentloaded`
- * fires, unlike Indeed's server-rendered cards, so `page.goto`'s own wait
- * condition is not enough here. Races a listing card against the confirmed
- * "no results" text, whichever appears first; if neither shows up within
- * the timeout, the caller (`captureApecPage`) treats the page shape as
- * unrecognized (interstitial, layout change, or an unknown block page) and
- * throws {@link ApecBlockedError}.
+ * fires, so `page.goto`'s own wait condition is not enough here. Races a
+ * listing card against the confirmed "no results" text, whichever appears
+ * first; if neither shows up within the timeout, the caller
+ * (`captureApecPage`) treats the page shape as unrecognized (interstitial,
+ * layout change, or an unknown block page) and throws
+ * {@link ApecBlockedError}.
  */
 async function waitForResultsToRender(page: Page): Promise<void> {
   await Promise.race([
@@ -98,12 +98,10 @@ export function randomDelayMs(min = 1500, max = 3500): number {
 }
 
 /**
- * Navigates to and captures one page of Apec.fr search results. Differs
- * from the Indeed pattern (`captureIndeedPage`) in two ways specific to
- * Apec: it dismisses the Didomi cookie-consent modal after navigation, and
- * it waits for client-rendered cards ({@link waitForResultsToRender})
- * instead of relying on `domcontentloaded` alone, since Apec.fr is an
- * Angular SPA.
+ * Navigates to and captures one page of Apec.fr search results. Dismisses
+ * the Didomi cookie-consent modal after navigation, then waits for
+ * client-rendered cards ({@link waitForResultsToRender}) instead of relying
+ * on `domcontentloaded` alone, since Apec.fr is an Angular SPA.
  *
  * Throws {@link ApecBlockedError} — never retried or worked around, per the
  * no-anti-bot-circumvention policy — when the results never render in time,
@@ -179,9 +177,7 @@ export async function captureApecPage(
 /**
  * Serializes captured cards into the `<<<LISTING id="...">>>`-delimited
  * format the extraction adapter's system prompt expects (see
- * `EXTRACTION_SYSTEM_PROMPT` in `/lib/extraction/prompt.ts`). Same format as
- * Indeed's `buildDelimitedContent` — kept as a per-site duplicate rather
- * than a shared helper since each site's `Captured*Listing` type differs.
+ * `EXTRACTION_SYSTEM_PROMPT` in `/lib/extraction/prompt.ts`).
  */
 export function buildDelimitedContent(listings: CapturedApecListing[]): string {
   return listings

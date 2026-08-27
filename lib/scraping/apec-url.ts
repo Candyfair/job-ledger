@@ -4,16 +4,15 @@
 import type { LookbackWindow } from "@/lib/extraction/lookback-window";
 
 // Confirmed via live inspection on 2026-08-26 (apec.fr):
-// - `motsCles`/`lieux` are the keyword/location params, both free text (same
-//   shape as Indeed's `q`/`l` — `lieux=Paris` returns results same as a
-//   department code would).
+// - `motsCles`/`lieux` are the keyword/location params, both free text —
+//   `lieux=Paris` returns results same as a department code would.
 // - Pagination is a plain `page` query param, 0-indexed, honored via direct
 //   URL navigation (no client-side-only Angular routing) — confirmed against
 //   both a middle page and the true last page.
-// - Apec shows 20 results per page (not 10 like Indeed).
-// - No `fromage`-equivalent "posted since" param was found during this
-//   inspection pass — lookback filtering relies entirely on the same
-//   post-extraction date filter Indeed uses (lib/extraction/lookback-window.ts).
+// - Apec shows 20 results per page.
+// - No "posted since" query param was found during this inspection pass —
+//   lookback filtering relies entirely on the shared post-extraction date
+//   filter (lib/extraction/lookback-window.ts).
 //
 // TODO(Session 4): SPEC.md §2 requires the "partner sites" checkbox to stay
 // unchecked. On Apec this isn't a simple boolean flag — unchecking it in the
@@ -25,11 +24,11 @@ import type { LookbackWindow } from "@/lib/extraction/lookback-window";
 // becomes the real Apec.fr implementation.
 
 /**
- * Builds an Apec.fr search-results URL. Unlike Indeed's `fromage` param, no
- * "posted since" query param was found during live inspection (see the file
- * header) — `params.lookback` is accepted for signature parity with
- * `buildIndeedSearchUrl` but has no effect here; lookback filtering for
- * Apec relies entirely on `isWithinLookbackWindow` post-extraction.
+ * Builds an Apec.fr search-results URL. No "posted since" query param was
+ * found during live inspection (see the file header) — `params.lookback` is
+ * accepted for signature parity with other site scrapers but has no effect
+ * here; lookback filtering for Apec relies entirely on
+ * `isWithinLookbackWindow` post-extraction.
  */
 export function buildApecSearchUrl(params: {
   keywords: string;
