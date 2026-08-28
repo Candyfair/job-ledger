@@ -1,6 +1,3 @@
-// THROWAWAY PRE-SESSION-4 SPIKE — proves the Trigger.dev / SiteStatus write
-// path end to end. Not the real multi-site Apec.fr implementation.
-//
 // Standalone harness for iterating on the Apec.fr scraping + extraction
 // pipeline without the Trigger.dev dev cycle. No DB writes — prints the
 // final merged + lookback-filtered listings as JSON.
@@ -14,13 +11,14 @@ import {
   isWithinLookbackWindow,
   type LookbackWindow,
 } from "@/lib/extraction/lookback-window";
+import { captureApecPage } from "@/lib/scraping/apec-scraper";
+import { buildDelimitedContent } from "@/lib/scraping/delimited-content";
 import {
-  captureApecPage,
-  buildDelimitedContent,
-  randomDelayMs,
   sleep,
-  ApecBlockedError,
-} from "@/lib/scraping/apec-scraper";
+  randomDelayMs,
+  SCRAPER_USER_AGENT,
+} from "@/lib/scraping/politeness";
+import { ScrapeBlockedError, ScrapeMarkupError } from "@/lib/scraping/errors";
 
 // Hardcoded search params for local iteration — no JobConfig, no trigger form.
 const SEARCH = {
@@ -33,10 +31,7 @@ const VOLUME_CAP = 50; // SPEC.md §7
 
 async function main() {
   const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({
-    userAgent:
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  });
+  const page = await browser.newPage({ userAgent: SCRAPER_USER_AGENT });
 
   const adapter = new ClaudeHaikuAdapter();
   const finalListings: unknown[] = [];
@@ -77,8 +72,11 @@ async function main() {
       pageNum += 1;
     }
   } catch (error) {
-    if (error instanceof ApecBlockedError) {
-      console.error("BLOCKED:", error.message);
+    if (
+      error instanceof ScrapeBlockedError ||
+      error instanceof ScrapeMarkupError
+    ) {
+      console.error(`BLOCKED: [${error.name}] ${error.message}`);
       process.exitCode = 1;
       return;
     }

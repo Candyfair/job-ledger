@@ -6,13 +6,24 @@ import { vi } from "vitest";
 // reproduces that: every chain method returns another instance of the same
 // mock, and the mock itself is a resolved Promise for `value`.
 export function mockDrizzleChain(value: unknown) {
+  // Each builder method accepts (and records) arbitrary args so tests can
+  // assert on the payload passed to `.values(...)` / `.set(...)` / etc.
+  const link = (...args: unknown[]) => {
+    void args;
+    return mockDrizzleChain(value);
+  };
   const chain = Object.assign(Promise.resolve(value), {
-    from: vi.fn(() => mockDrizzleChain(value)),
-    where: vi.fn(() => mockDrizzleChain(value)),
-    orderBy: vi.fn(() => mockDrizzleChain(value)),
-    values: vi.fn(() => mockDrizzleChain(value)),
-    set: vi.fn(() => mockDrizzleChain(value)),
-    returning: vi.fn(() => Promise.resolve(value)),
+    from: vi.fn(link),
+    where: vi.fn(link),
+    orderBy: vi.fn(link),
+    values: vi.fn(link),
+    set: vi.fn(link),
+    onConflictDoUpdate: vi.fn(link),
+    onConflictDoNothing: vi.fn(link),
+    returning: vi.fn((...args: unknown[]) => {
+      void args;
+      return Promise.resolve(value);
+    }),
   });
   return chain;
 }

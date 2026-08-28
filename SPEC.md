@@ -80,11 +80,30 @@ normalization step for known spelling variants (e.g. `full-stack` /
 launch — extended incrementally as new cases surface, not an attempt at
 exhaustive coverage.
 
-### Error handling — broken site markup
+### Error handling — site scrape failure
 
-1. A site's Playwright task fails (selector timeout / element not found).
-2. That site's portion of the run is marked failed; user sees an informational message ("Could not fetch results from [site] — it may have changed and needs review").
-3. That site is automatically set `active: false` globally (see DATA_MODEL.md's `SiteStatus`) until manually re-enabled — a markup break affects the site for every user and every job config, not just the run that surfaced it. Any visitor, authenticated or not, sees the "needs review" message for their run; only an authenticated user gets a persistent place (the settings page) to re-enable it.
+1. A site's Playwright task fails. Two distinct causes, recorded separately on
+   `SiteStatus.lastFailureCause` (see DATA_MODEL.md):
+   - **`markup_broken`** — a selector timed out / an expected element wasn't
+     found / the results structure no longer matches. The site likely
+     changed its markup.
+   - **`bot_challenge`** — the site served a recognized bot-verification
+     interstitial (Cloudflare-style challenge page) instead of results.
+     Detection is a conservative substring match against known challenge-page
+     copy; it is never worked around (SPEC.md §2 — circumventing a
+     bot-protection measure crosses from politeness into deliberate evasion).
+     A page's LLM extraction coming back empty is **not** in this category —
+     that's a per-run `partial_failure`, not a site deactivation.
+2. That site's portion of the run is marked failed; the user sees an
+   informational message keyed to the cause — markup: "Impossible de
+   récupérer les résultats de [site] — le site a peut-être changé et doit
+   être vérifié."; bot block: "Accès à [site] bloqué (protection anti-bot) —
+   le site nécessite une vérification manuelle."
+3. That site is automatically set `active: false` globally until manually
+   re-enabled — either cause affects the site for every user and every job
+   config, not just the run that surfaced it. Any visitor, authenticated or
+   not, sees the message for their run; only an authenticated user gets a
+   persistent place (the settings page) to re-enable it.
 
 ## §6. Screens
 
@@ -99,7 +118,7 @@ exhaustive coverage.
 
 To be detailed in the scaffolding session once the extraction schema is finalized. Expected shape:
 
-- `POST /api/scrape/trigger` — body: `{ lookbackWindow, jobConfigIds[], sites[], model }` → creates `ScrapeRun`, invokes Trigger.dev task(s), returns `runId`.
+- `POST /api/scrape/trigger` — body: `{ lookbackWindow, jobConfigIds[], sites[], model }` → creates the `ScrapeRun` row, invokes the per-site Trigger.dev task(s), returns `runId`. Authoritative `ScrapeRun` creation lives here: the endpoint creates the row once and passes its id into each site task, which then only appends `Listing` rows and never touches the run's `status` (the endpoint rolls per-site outcomes up). A site task invoked **without** a run id — Trigger.dev's Test tab, the `scripts/test-scrape-*` harnesses — falls back to creating its own single-site `ScrapeRun`; that path is a pre-Session-5 testing convenience, not the production flow.
 - `GET /api/scrape/status/:runId` — polled by the frontend for in-app status.
 - Trigger.dev task → writes directly to Postgres on completion (no callback to Next.js needed).
 
@@ -114,7 +133,7 @@ To be detailed in the scaffolding session once the extraction schema is finalize
 
 - **Rate limiting**: per-IP counters in Postgres (no dedicated service — see DEPLOYMENT.md), enforced on the trigger endpoint.
 - **Volume cap**: 50 listings maximum par run.
-- **Scraping politeness**: randomized inter-request delay, limited per-site concurrency, default Chromium user-agent.
+- **Scraping politeness**: randomized inter-request delay between page fetches; limited per-site concurrency (each `scrape-<site>` Trigger.dev task pins `queue.concurrencyLimit: 1`, so runs against one site serialize while different sites still run in parallel); a stable mainstream desktop Chrome user-agent (not the literal Chromium default, whose headless build advertises `HeadlessChrome` — a bot signal on several of these boards; this is a plain request header, not stealth/fingerprint tooling, which §2 rules out).
 - **Security**: see DEPLOYMENT.md for the full mTLS + fail2ban setup.
 - **UI language**: French throughout.
 - **License**: MIT.
@@ -138,7 +157,7 @@ Concrete cases to cover once each piece is built (see CLAUDE.md's Testing sectio
 - **Rate limiting**: requests under the per-IP threshold succeed; requests over it are rejected with a clear error, and the counter resets after its window.
 - **Extraction adapter**: both Haiku and DeepSeek adapters return the same JSON shape for the same fixture input (contract test, mocked responses — never live calls in CI).
 - **Trigger form**: all job configs/sites pre-checked by default; unchecking one excludes it from the submitted payload.
-- **Error handling**: a simulated Playwright failure for one site produces the info message and, for an authenticated user, flips that site's `active` flag.
+- **Error handling**: a simulated selector failure and a simulated bot-challenge page each flip the site's `active` flag, record the matching `lastFailureCause` (`markup_broken` / `bot_challenge`), and surface the cause-specific message; an empty extraction result does neither (it downgrades the run to `partial_failure`).
 
 ## §9. Open Items — do not assume, ask before implementing
 

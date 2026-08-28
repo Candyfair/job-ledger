@@ -22,3 +22,15 @@ export const lookbackWindowTypeEnum = pgEnum("lookback_window_type", [
   "3d",
   "since_date",
 ]);
+
+// Why a site's scraper was auto-deactivated (SPEC.md §5). Recorded on
+// SiteStatus so the settings page can show the right "needs review" message:
+// - markup_broken: a selector timed out / the results structure no longer
+//   matches — the site probably changed its markup.
+// - bot_challenge: the site served a recognized bot-verification interstitial
+//   (Cloudflare-style challenge copy) instead of results.
+// Both drive the same active: false deactivation; only the message differs.
+export const siteFailureCauseEnum = pgEnum("site_failure_cause", [
+  "markup_broken",
+  "bot_challenge",
+]);

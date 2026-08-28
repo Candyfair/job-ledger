@@ -30,7 +30,8 @@ Global per-site availability — a markup break affects that site's scraper for 
 
 - `site` (Welcome to the Jungle / Apec.fr / HelloWork)
 - `active` (boolean, default `true`; auto-set to `false` when that site's Playwright task fails — see SPEC.md §5)
-- `lastErrorAt`, `lastErrorNote` (optional, feeds the "needs review" message)
+- `lastErrorAt`, `lastErrorNote` (nullable; `lastErrorNote` holds the French, user-facing "needs review" sentence shown on the settings page)
+- `lastFailureCause` (nullable enum — `markup_broken` | `bot_challenge`; set alongside `active: false` on every deactivation, distinguishes a markup change from a detected bot block so the right message is shown — see SPEC.md §5)
 
 ## `ExclusionKeyword`
 

@@ -1,6 +1,3 @@
-// THROWAWAY PRE-SESSION-4 SPIKE — proves the Trigger.dev / SiteStatus write
-// path end to end. Not the real multi-site Apec.fr implementation.
-
 import type { LookbackWindow } from "@/lib/extraction/lookback-window";
 
 // Confirmed via live inspection on 2026-08-26 (apec.fr):
@@ -13,22 +10,28 @@ import type { LookbackWindow } from "@/lib/extraction/lookback-window";
 // - No "posted since" query param was found during this inspection pass —
 //   lookback filtering relies entirely on the shared post-extraction date
 //   filter (lib/extraction/lookback-window.ts).
-//
-// TODO(Session 4): SPEC.md §2 requires the "partner sites" checkbox to stay
-// unchecked. On Apec this isn't a simple boolean flag — unchecking it in the
-// browser adds four repeated `typesConvention` params (observed:
-// 143684/143685/143686/143687) with no visible label in the markup. Those
-// IDs couldn't be verified against any official documentation in this spike,
-// so partner-site exclusion is intentionally NOT implemented here — partner
-// listings will leak into results. Must be researched properly before this
-// becomes the real Apec.fr implementation.
+
+// SPEC.md §2 — Apec's "partner sites" ("sites partenaires") checkbox must
+// stay unchecked (its results overlap HelloWork and are low-relevance
+// otherwise). Verified live on apec.fr (2026-08-28, DevTools): these four
+// `typesConvention` params are ALWAYS sent and are exactly the
+// partner-sites-EXCLUDED state — the state SPEC §2 wants. Apec's own UI adds
+// a fifth value, 143706 (the partner-listings type), on top of these four
+// only when the checkbox is ticked; we intentionally never emit it, so the
+// default output here already excludes partner sites.
+const OWN_OFFERS_TYPES_CONVENTION = ["143684", "143685", "143686", "143687"];
 
 /**
- * Builds an Apec.fr search-results URL. No "posted since" query param was
- * found during live inspection (see the file header) — `params.lookback` is
- * accepted for signature parity with other site scrapers but has no effect
- * here; lookback filtering for Apec relies entirely on
- * `isWithinLookbackWindow` post-extraction.
+ * Builds an Apec.fr search-results URL.
+ *
+ * `params.lookback` is accepted for signature parity with the other site URL
+ * builders but has no effect — no "posted since" query param exists on Apec
+ * (see the file header); lookback filtering happens post-extraction via
+ * `isWithinLookbackWindow`.
+ *
+ * Always pins the four `typesConvention` params that exclude partner-site
+ * listings (SPEC.md §2) — see the comment on
+ * {@link OWN_OFFERS_TYPES_CONVENTION}.
  */
 export function buildApecSearchUrl(params: {
   keywords: string;
@@ -45,6 +48,9 @@ export function buildApecSearchUrl(params: {
   }
   if (params.page > 0) {
     url.searchParams.set("page", String(params.page));
+  }
+  for (const id of OWN_OFFERS_TYPES_CONVENTION) {
+    url.searchParams.append("typesConvention", id);
   }
   return url.toString();
 }

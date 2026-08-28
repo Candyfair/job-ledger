@@ -1,0 +1,174 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { db } from "@/lib/db";
+import { scrapeRun, listing } from "@/drizzle/schema";
+import { mockDrizzleChain } from "@/lib/test/mock-db";
+import { markSiteFailed } from "./site-status";
+import { ScrapeBlockedError, ScrapeMarkupError } from "./errors";
+import { runSiteScrape, type CaptureSitePage } from "./run-scrape";
+import type { ExtractionAdapter } from "@/lib/extraction/adapter";
+
+const browserClose = vi.fn();
+
+vi.mock("playwright", () => ({
+  chromium: {
+    launch: vi.fn(async () => ({
+      newPage: vi.fn(async () => ({})),
+      close: browserClose,
+    })),
+  },
+}));
+
+vi.mock("@/lib/db", () => ({
+  db: { select: vi.fn(), insert: vi.fn() },
+}));
+
+// Keeps the module-scope `new Anthropic()` in the real adapter from running
+// at import time — every test injects its own adapter anyway.
+vi.mock("@/lib/extraction/claude-haiku", () => ({
+  ClaudeHaikuAdapter: class {
+    extractListings = vi.fn(async () => []);
+  },
+}));
+
+vi.mock("./site-status", () => ({ markSiteFailed: vi.fn() }));
+
+const CONFIG = { id: "jc-1", keywords: ["dev"], location: "Paris" };
+const today = new Date().toISOString().slice(0, 10);
+
+function adapterReturning(
+  entries: Awaited<ReturnType<ExtractionAdapter["extractListings"]>>,
+): ExtractionAdapter {
+  return { extractListings: vi.fn(async () => entries) };
+}
+
+const onePageCapture: CaptureSitePage = vi.fn(async () => ({
+  listings: [{ listingId: "l0_0", url: "https://apec.fr/1", rawText: "raw" }],
+  hasMore: false,
+}));
+
+const oneExtractedEntry = [
+  {
+    listingId: "l0_0",
+    title: "Développeur",
+    company: null,
+    companyNormalized: null,
+    roleCanonical: null,
+    datePosted: today,
+    salaryRaw: null,
+  },
+];
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(db.select).mockReturnValue(mockDrizzleChain([CONFIG]) as never);
+  vi.mocked(db.insert).mockReturnValue(
+    mockDrizzleChain([{ id: "run-1" }]) as never,
+  );
+});
+
+describe("runSiteScrape — failure path", () => {
+  it("marks the site as bot_challenge and re-throws on ScrapeBlockedError", async () => {
+    const capturePage: CaptureSitePage = vi.fn(async () => {
+      throw new ScrapeBlockedError("challenge");
+    });
+
+    await expect(
+      runSiteScrape({
+        site: "apec",
+        capturePage,
+        payload: { jobConfigId: "jc-1", lookback: { type: "3d" } },
+        extractionAdapter: adapterReturning([]),
+      }),
+    ).rejects.toThrow(ScrapeBlockedError);
+
+    expect(browserClose).toHaveBeenCalled();
+    expect(markSiteFailed).toHaveBeenCalledWith(
+      "apec",
+      "bot_challenge",
+      expect.stringContaining("Apec.fr"),
+    );
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("marks the site as markup_broken and re-throws on a generic selector error", async () => {
+    const capturePage: CaptureSitePage = vi.fn(async () => {
+      throw new ScrapeMarkupError("selector missing");
+    });
+
+    await expect(
+      runSiteScrape({
+        site: "hellowork",
+        capturePage,
+        payload: { jobConfigId: "jc-1", lookback: { type: "3d" } },
+        extractionAdapter: adapterReturning([]),
+      }),
+    ).rejects.toThrow(ScrapeMarkupError);
+
+    expect(markSiteFailed).toHaveBeenCalledWith(
+      "hellowork",
+      "markup_broken",
+      expect.any(String),
+    );
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+});
+
+describe("runSiteScrape — ScrapeRun reuse vs create", () => {
+  it("creates a ScrapeRun and tags listings with the new id when scrapeRunId is absent", async () => {
+    const result = await runSiteScrape({
+      site: "apec",
+      capturePage: onePageCapture,
+      payload: { jobConfigId: "jc-1", lookback: { type: "3d" } },
+      extractionAdapter: adapterReturning(oneExtractedEntry),
+    });
+
+    expect(result).toMatchObject({
+      scrapeRunId: "run-1",
+      listingCount: 1,
+      status: "completed",
+    });
+
+    const insertedTables = vi.mocked(db.insert).mock.calls.map((c) => c[0]);
+    expect(insertedTables).toContain(scrapeRun);
+    expect(insertedTables).toContain(listing);
+  });
+
+  it("reuses the supplied ScrapeRun id and does not insert a scrape_run row", async () => {
+    const result = await runSiteScrape({
+      site: "apec",
+      capturePage: onePageCapture,
+      payload: {
+        jobConfigId: "jc-1",
+        lookback: { type: "3d" },
+        scrapeRunId: "existing-run",
+      },
+      extractionAdapter: adapterReturning(oneExtractedEntry),
+    });
+
+    expect(result).toMatchObject({
+      scrapeRunId: "existing-run",
+      listingCount: 1,
+      status: null,
+    });
+
+    const insertedTables = vi.mocked(db.insert).mock.calls.map((c) => c[0]);
+    expect(insertedTables).toContain(listing);
+    expect(insertedTables).not.toContain(scrapeRun);
+  });
+
+  it("does not insert listings when nothing lands in the lookback window", async () => {
+    const stale = [{ ...oneExtractedEntry[0], datePosted: "2020-01-01" }];
+
+    const result = await runSiteScrape({
+      site: "apec",
+      capturePage: onePageCapture,
+      payload: { jobConfigId: "jc-1", lookback: { type: "3d" } },
+      extractionAdapter: adapterReturning(stale),
+    });
+
+    expect(result.listingCount).toBe(0);
+    const insertedTables = vi.mocked(db.insert).mock.calls.map((c) => c[0]);
+    expect(insertedTables).toContain(scrapeRun);
+    expect(insertedTables).not.toContain(listing);
+  });
+});

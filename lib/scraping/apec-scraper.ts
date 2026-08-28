@@ -1,29 +1,22 @@
-// THROWAWAY PRE-SESSION-4 SPIKE — proves the Trigger.dev / SiteStatus write
-// path end to end. Not the real multi-site Apec.fr implementation.
-
 import type { Page } from "playwright";
 import { buildApecSearchUrl } from "./apec-url";
 import type { LookbackWindow } from "@/lib/extraction/lookback-window";
+import type { CapturedSiteListing } from "./run-scrape";
+import {
+  ScrapeBlockedError,
+  ScrapeMarkupError,
+  isBotChallengePage,
+} from "./errors";
 
-export interface CapturedApecListing {
-  listingId: string;
-  url: string;
-  rawText: string;
-}
-
+/**
+ * Result of capturing one Apec.fr results page. `hasMore` reflects whether a
+ * "next page" control is present, not whether the volume cap is reached —
+ * that's {@link runSiteScrape}'s concern.
+ */
 export interface ApecPageResult {
-  listings: CapturedApecListing[];
+  listings: CapturedSiteListing[];
   hasMore: boolean;
 }
-
-// Selector failure / an unrecognized page shape are both treated as this
-// site-wide failure by callers (SPEC.md §5 SiteStatus path) — never retried
-// or worked around (no anti-bot circumvention, per policy). No Cloudflare-
-// style bot-verification wall was observed against Apec.fr during this
-// spike's live inspection, so detection here is generalized (interstitial /
-// listing selector unexpectedly missing) rather than a specific string
-// match against known challenge-page copy.
-export class ApecBlockedError extends Error {}
 
 // Confirmed via live inspection on 2026-08-26 (apec.fr). The clickable `<a>`
 // wraps the ENTIRE card (container-result > div > a >
@@ -70,9 +63,8 @@ async function dismissCookieConsent(page: Page): Promise<void> {
  * fires, so `page.goto`'s own wait condition is not enough here. Races a
  * listing card against the confirmed "no results" text, whichever appears
  * first; if neither shows up within the timeout, the caller
- * (`captureApecPage`) treats the page shape as unrecognized (interstitial,
- * layout change, or an unknown block page) and throws
- * {@link ApecBlockedError}.
+ * (`captureApecPage`) treats the page shape as unrecognized (a layout
+ * change) and throws {@link ScrapeMarkupError}.
  */
 async function waitForResultsToRender(page: Page): Promise<void> {
   await Promise.race([
@@ -87,28 +79,20 @@ async function waitForResultsToRender(page: Page): Promise<void> {
   ]);
 }
 
-/** Awaits a plain timeout — used between page fetches for scraping politeness (SPEC.md §7). */
-export async function sleep(ms: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/** Randomized inter-request delay for scraping politeness (SPEC.md §7). */
-export function randomDelayMs(min = 1500, max = 3500): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
 /**
  * Navigates to and captures one page of Apec.fr search results. Dismisses
- * the Didomi cookie-consent modal after navigation, then waits for
- * client-rendered cards ({@link waitForResultsToRender}) instead of relying
- * on `domcontentloaded` alone, since Apec.fr is an Angular SPA.
+ * the Didomi cookie-consent modal after navigation, checks for a bot-
+ * verification interstitial, then waits for client-rendered cards
+ * ({@link waitForResultsToRender}) instead of relying on `domcontentloaded`
+ * alone, since Apec.fr is an Angular SPA.
  *
- * Throws {@link ApecBlockedError} — never retried or worked around, per the
- * no-anti-bot-circumvention policy — when the results never render in time,
- * or when cards are counted but the wrapping-anchor structure they're read
- * from doesn't match (an unrecognized page shape either way). Callers
- * (`/trigger/scrape-apec.ts`) treat this as a site-wide failure and write it
- * to `SiteStatus`.
+ * Throws — never retried or worked around (SPEC.md §2, §5):
+ * - {@link ScrapeBlockedError} when the page is a recognized bot-challenge
+ *   interstitial rather than results;
+ * - {@link ScrapeMarkupError} when results never render, or when cards are
+ *   counted but the wrapping-anchor structure doesn't match.
+ * Callers (`/trigger/scrape-apec.ts` → `runSiteScrape`) treat either as a
+ * site-wide failure and write it to `SiteStatus`.
  */
 export async function captureApecPage(
   page: Page,
@@ -121,12 +105,19 @@ export async function captureApecPage(
 ): Promise<ApecPageResult> {
   const url = buildApecSearchUrl(params);
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+
+  if (isBotChallengePage(await page.locator("body").innerText())) {
+    throw new ScrapeBlockedError(
+      "Apec.fr served a bot-verification page instead of search results",
+    );
+  }
+
   await dismissCookieConsent(page);
 
   try {
     await waitForResultsToRender(page);
   } catch {
-    throw new ApecBlockedError(
+    throw new ScrapeMarkupError(
       "Apec.fr page did not render listings or a no-results message in time",
     );
   }
@@ -151,12 +142,12 @@ export async function captureApecPage(
   if (rawCards.length === 0) {
     // Cards were counted but the wrapping-anchor structure wasn't found —
     // an unexpected page shape, not a "genuinely zero results" case.
-    throw new ApecBlockedError(
+    throw new ScrapeMarkupError(
       "Apec.fr listing cards found but result-link structure did not match",
     );
   }
 
-  const listings: CapturedApecListing[] = [];
+  const listings: CapturedSiteListing[] = [];
   rawCards.forEach((card, index) => {
     if (!card.href) {
       console.warn(`Listing at index ${index} has no href — dropping`);
@@ -172,18 +163,4 @@ export async function captureApecPage(
   const hasMore = (await page.locator(NEXT_PAGE_SELECTOR).count()) > 0;
 
   return { listings, hasMore };
-}
-
-/**
- * Serializes captured cards into the `<<<LISTING id="...">>>`-delimited
- * format the extraction adapter's system prompt expects (see
- * `EXTRACTION_SYSTEM_PROMPT` in `/lib/extraction/prompt.ts`).
- */
-export function buildDelimitedContent(listings: CapturedApecListing[]): string {
-  return listings
-    .map(
-      (l) =>
-        `<<<LISTING id="${l.listingId}">>>\n${l.rawText}\n<<<END_LISTING>>>`,
-    )
-    .join("\n\n");
 }
