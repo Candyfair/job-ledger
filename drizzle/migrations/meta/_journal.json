@@ -36,6 +36,13 @@
       "when": 1787916090186,
       "tag": "0004_opposite_radioactive_man",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787921243934,
+      "tag": "0005_equal_vector",
+      "breakpoints": true
     }
   ]
 }

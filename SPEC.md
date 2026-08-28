@@ -11,7 +11,9 @@ Auth is scoped to persisting user config only — it never gates triggering a sc
 
 ## §2. Sites in Scope
 
-Welcome to the Jungle, Apec.fr, HelloWork. Apec's "partner sites" checkbox is deliberately left unchecked (overlaps with HelloWork, low relevance otherwise).
+Apec.fr and HelloWork. Apec's "partner sites" checkbox is deliberately left unchecked (overlaps with HelloWork, low relevance otherwise).
+
+**Welcome to the Jungle was in scope initially but is now excluded.** Its job search became account-gated: results are produced by a personalized matching algorithm that needs a candidate profile (skills, experience, preferences), which recently replaced the previously-open keyword + location search. Company showcase pages and their individual open listings stay viewable without an account, but browsing companies one at a time is a fundamentally different access pattern than the deterministic keyword + location search this project's pipeline is built on (§4) — it offers no equivalent scraping surface. Separately, personalized match results aren't reproducible for a given `JobConfig` the way a plain search is, which conflicts with how JobConfig-driven runs are expected to behave. Standing up a dedicated dummy candidate account plus a different scraping approach for a single site wasn't worth it.
 
 **LinkedIn and Indeed are excluded.** Both ToS explicitly prohibit automated/bot access to the site. For Indeed specifically: indeed.com/legal (Section A.3.5) confirms automating the Indeed Apply flow is prohibited, and independent sources report a broader site-wide scraping prohibition — consistent with the persistent Cloudflare blocking observed in Session 4 even after a genuine 15h cooldown, which pointed to deliberate enforcement rather than simple rate-limiting. Treated identically to LinkedIn: not worth the legal/reputational exposure on a recruiter-facing project. No further anti-detection engineering (stealth plugins, fingerprint spoofing) was attempted once the ToS signal was confirmed — that would cross from politeness into deliberate circumvention of a security measure enforcing a contractual prohibition.
 

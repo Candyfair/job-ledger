@@ -51,16 +51,13 @@ describe("describeScrapeError", () => {
 
   it("treats a bare Playwright-style timeout as markup_broken", () => {
     const timeout = new Error("Timeout 15000ms exceeded waiting for locator");
-    const { cause } = describeScrapeError(timeout, "welcome_to_the_jungle");
+    const { cause } = describeScrapeError(timeout, "hellowork");
     expect(cause).toBe("markup_broken");
   });
 
   it("treats a non-Error throw as markup_broken", () => {
-    const { cause, note } = describeScrapeError(
-      "boom",
-      "welcome_to_the_jungle",
-    );
+    const { cause, note } = describeScrapeError("boom", "hellowork");
     expect(cause).toBe("markup_broken");
-    expect(note).toContain("Welcome to the Jungle");
+    expect(note).toContain("HelloWork");
   });
 });

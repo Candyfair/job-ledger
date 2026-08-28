@@ -28,7 +28,7 @@ One row per configured job search.
 
 Global per-site availability — a markup break affects that site's scraper for every search running against it, not one job config in isolation. One row per supported site, shared across all users (including anonymous).
 
-- `site` (Welcome to the Jungle / Apec.fr / HelloWork)
+- `site` (Apec.fr / HelloWork — Welcome to the Jungle was removed from the `site` enum, see SPEC.md §2)
 - `active` (boolean, default `true`; auto-set to `false` when that site's Playwright task fails — see SPEC.md §5)
 - `lastErrorAt`, `lastErrorNote` (nullable; `lastErrorNote` holds the French, user-facing "needs review" sentence shown on the settings page)
 - `lastFailureCause` (nullable enum — `markup_broken` | `bot_challenge`; set alongside `active: false` on every deactivation, distinguishes a markup change from a detected bot block so the right message is shown — see SPEC.md §5)

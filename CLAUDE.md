@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## Project overview
 
-Jobs Scraping — an open-source, on-demand job-listing aggregator across French job boards (Welcome to the Jungle, Apec.fr, HelloWork), built to demonstrate agentic development with the Claude API. Playwright handles navigation deterministically; Claude (or DeepSeek V4 Flash, offered as an alternative) only structures raw listing content into normalized JSON. Results are deduplicated and filterable in a dashboard.
+Jobs Scraping — an open-source, on-demand job-listing aggregator across French job boards (Apec.fr, HelloWork), built to demonstrate agentic development with the Claude API. Playwright handles navigation deterministically; Claude (or DeepSeek V4 Flash, offered as an alternative) only structures raw listing content into normalized JSON. Results are deduplicated and filterable in a dashboard.
 
 Full behavioral spec: see `SPEC.md`. Deployment/infra runbook: see `DEPLOYMENT.md`.
 
