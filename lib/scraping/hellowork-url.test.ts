@@ -8,9 +8,9 @@ function parse(url: string) {
   return new URL(url);
 }
 
-// NOTE: these assertions pin the CURRENT scaffolded param names, which are
-// UNVERIFIED (see hellowork-url.ts header). When the live shape is
-// confirmed, both hellowork-url.ts and this file update together.
+// Query params verified 2026-08-28 via manual DevTools inspection — see the
+// hellowork-url.ts header. (The DOM selectors in hellowork-scraper.ts are
+// still unverified and untested.)
 describe("buildHelloworkSearchUrl", () => {
   it("sets the keyword param", () => {
     const url = parse(
@@ -41,12 +41,12 @@ describe("buildHelloworkSearchUrl", () => {
       parse(
         buildHelloworkSearchUrl({
           keywords: "dev",
-          location: "Paris",
+          location: "Paris 75001",
           lookback: LOOKBACK,
           page: 0,
         }),
       ).searchParams.get("l"),
-    ).toBe("Paris");
+    ).toBe("Paris 75001");
   });
 
   it("omits page for page 0 and emits it 1-indexed from page 1 on", () => {
@@ -71,17 +71,36 @@ describe("buildHelloworkSearchUrl", () => {
     ).toBe("4");
   });
 
-  it("ignores the lookback window (no HelloWork query param wired for it)", () => {
-    const a = buildHelloworkSearchUrl({
-      keywords: "dev",
-      lookback: { type: "24h" },
-      page: 0,
+  it("pins the fixed search-filter params (st / ray / msa)", () => {
+    const url = parse(
+      buildHelloworkSearchUrl({ keywords: "dev", lookback: LOOKBACK, page: 0 }),
+    );
+    expect(url.searchParams.get("st")).toBe("relevance");
+    expect(url.searchParams.get("ray")).toBe("20");
+    // msa = minimum annual salary in €; pinned at 0 (no minimum) — no
+    // JobConfig field maps to a salary floor.
+    expect(url.searchParams.get("msa")).toBe("0");
+  });
+
+  describe("d — date/lookback filter", () => {
+    function d(lookback: LookbackWindow) {
+      return parse(
+        buildHelloworkSearchUrl({ keywords: "dev", lookback, page: 0 }),
+      ).searchParams.get("d");
+    }
+
+    it("maps a 24h lookback to d=h", () => {
+      expect(d({ type: "24h" })).toBe("h");
     });
-    const b = buildHelloworkSearchUrl({
-      keywords: "dev",
-      lookback: { type: "since_date", since: new Date("2026-01-01") },
-      page: 0,
+
+    it("maps a 3-day lookback to d=d — the param KEY 'd' and this VALUE 'd' are an unrelated naming collision, not a bug", () => {
+      expect(d({ type: "3d" })).toBe("d");
     });
-    expect(a).toBe(b);
+
+    it("maps a since_date lookback to d=all (no HelloWork bucket fits an arbitrary date; post-extraction filter handles it)", () => {
+      expect(d({ type: "since_date", since: new Date("2026-01-01") })).toBe(
+        "all",
+      );
+    });
   });
 });
