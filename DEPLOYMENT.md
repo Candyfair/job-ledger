@@ -27,6 +27,16 @@
 
 ## VPS Postgres (Self-Hosted, Dockerized)
 
+> **Status: not yet provisioned.** Everything below describes the target
+> setup, not the current state. VPS provisioning (Docker Postgres, mTLS,
+> fail2ban jail, migrations pipeline) is deliberately sequenced last — after
+> the app is fully built and validated against a local Postgres instance
+> (via this repo's `docker-compose.yml`, run locally). This avoids running
+> and securing a live production database while the schema and scraping
+> logic are still changing session to session. `.github/workflows/migrate.yml`
+> does not exist yet for the same reason — it will be written as part of
+> the VPS provisioning phase, not before.
+
 ### Why self-hosted, not managed
 
 Considered Supabase first (already used on another project), but its free tier pauses a project after 7 days of inactivity — a real risk given this tool's on-demand, irregular usage pattern. Self-hosting on the existing VPS avoids that entirely, at the cost of owning the ops work below.
