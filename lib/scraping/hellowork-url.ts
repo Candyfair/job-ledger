@@ -19,8 +19,8 @@ import type { LookbackWindow } from "@/lib/extraction/lookback-window";
 // autocomplete-suggestion resource ids, not derivable from an arbitrary
 // JobConfig — free-text k / l only.
 //
-// The DOM-layer selectors in hellowork-scraper.ts are still UNVERIFIED (no
-// markup was inspected this round) — that file keeps its TODO(verify) markers.
+// The DOM-layer selectors live in hellowork-scraper.ts (also verified
+// 2026-08-28, in a later inspection round).
 const RESULTS_PATH = "https://www.hellowork.com/fr-fr/emploi/recherche.html";
 
 // Pinned search-filter params — set explicitly so a change to HelloWork's

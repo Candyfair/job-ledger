@@ -2,10 +2,6 @@
 // pipeline without the Trigger.dev dev cycle. No DB writes — prints the
 // final merged + lookback-filtered listings as JSON.
 //
-// NOTE: the HelloWork selectors/params this exercises are UNVERIFIED
-// scaffolding (see lib/scraping/hellowork-*.ts headers) — expect a BLOCKED
-// line until they're confirmed against the live site.
-//
 // Usage: npm run test:scrape:hellowork
 
 import { chromium } from "playwright";

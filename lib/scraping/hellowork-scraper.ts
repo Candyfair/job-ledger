@@ -10,44 +10,46 @@ import {
 
 /**
  * Result of capturing one HelloWork results page. `hasMore` reflects whether
- * a "next page" control is present, not whether the volume cap is reached —
- * that's {@link runSiteScrape}'s concern.
+ * HelloWork's pager exposes a button for the next page, not whether the
+ * volume cap is reached — that's {@link runSiteScrape}'s concern.
  */
 export interface HelloworkPageResult {
   listings: CapturedSiteListing[];
   hasMore: boolean;
 }
 
-// UNVERIFIED — scaffolded 2026-08-28 from prior general knowledge, NOT
-// confirmed by live inspection this session (hellowork.com is blocked by
-// the Claude browser extension's permission allowlist). Every selector
-// below is a best guess and marked TODO(verify); they MUST be checked
-// against the live DOM before this scraper is trusted. HelloWork
-// server-renders its results list, so unlike Apec the cards should be
-// present at `domcontentloaded` — the wait-for-render race is kept anyway
-// as a cheap guard and to keep the shape identical to the other scrapers.
+// Selectors verified 2026-08-28 via manual DevTools inspection of the live
+// hellowork.com search results (the Claude browser extension still can't
+// reach the domain). HelloWork server-renders the results list, so the
+// cards and the result-count heading are present in the initial HTML — no
+// client-render wait is needed the way Apec's Angular SPA requires one.
 
 // The repeating results-list item.
-const LISTING_CARD_SELECTOR = 'li[data-id-storage-target="item"]'; // TODO(verify)
-// The job-detail anchor inside each card. HelloWork detail URLs look like
-// /fr-fr/emplois/<id>.html.
-const RESULT_LINK_SELECTOR = `${LISTING_CARD_SELECTOR} a[href*="/emplois/"]`; // TODO(verify)
-// "Next page" control in the pager at the foot of the list.
-const NEXT_PAGE_SELECTOR = 'a[aria-label="Page suivante"], nav a[rel="next"]'; // TODO(verify)
-// Cookie-consent. HelloWork has used a "continuer sans accepter" affordance;
-// the selector needs confirming.
-const COOKIE_REFUSE_SELECTOR =
-  "#hw-cc-notice-continue-without-accepting, #onetrust-reject-all-handler"; // TODO(verify)
-// Text shown instead of any cards when a search genuinely has zero matches.
-const NO_RESULTS_TEXT = "Aucune offre"; // TODO(verify)
+const LISTING_CARD_SELECTOR = 'li[data-id-storage-target="item"]';
+// The job-detail anchor inside a card. HelloWork detail URLs look like
+// /fr-fr/emplois/<id>.html (e.g. /fr-fr/emplois/80722424.html).
+const LISTING_LINK_SELECTOR = 'a[href*="/emplois/"]';
+// Cookie-consent. Real <button id="hw-cc-notice-continue-without-accepting-btn">
+// "Continuer sans accepter"</button>. Select on the stable id only — the
+// surrounding Tailwind utility classes churn on redesigns.
+const COOKIE_REFUSE_SELECTOR = "#hw-cc-notice-continue-without-accepting-btn";
+// The results-count heading. Normally shows the total ("55 offres"); reads
+// "0 offre" (singular) when a search has no matches — see readResultCount for
+// why this, and not a fixed "no results" string, is how emptiness is
+// detected (the assumed "Aucune offre" copy does not exist on the page).
+const COUNT_HEADING_SELECTOR = "h1";
+// Leading integer of the count heading. Tolerates thousands grouping
+// (spaces / non-breaking spaces) before the "offre(s)" token.
+const RESULT_COUNT_RE = /(\d[\d\s]*)\s*offres?\b/i;
 
 /**
- * Dismisses the cookie-consent banner if present. Bounded wait, non-fatal if
- * the banner never appears (consent already recorded, or the selector is
- * wrong — see the TODO on {@link COOKIE_REFUSE_SELECTOR}).
+ * Dismisses the "Continuer sans accepter" cookie-consent banner if present.
+ * Bounded wait, non-fatal if the banner never appears (consent already
+ * recorded on a repeat visit, or no banner served) — mirrors Apec's
+ * `dismissCookieConsent`.
  */
 async function dismissCookieConsent(page: Page): Promise<void> {
-  const refuseButton = page.locator(COOKIE_REFUSE_SELECTOR).first();
+  const refuseButton = page.locator(COOKIE_REFUSE_SELECTOR);
   await refuseButton
     .waitFor({ state: "visible", timeout: 8000 })
     .catch(() => {});
@@ -57,37 +59,63 @@ async function dismissCookieConsent(page: Page): Promise<void> {
 }
 
 /**
- * Waits for HelloWork's results to exist in the DOM. Races a listing card
- * against the "no results" text, whichever appears first; if neither shows
- * up within the timeout the caller treats the page shape as unrecognized (a
- * layout change) and throws {@link ScrapeMarkupError}.
+ * Reads the total result count off HelloWork's `<h1>` results heading.
+ *
+ * HelloWork has no fixed "no results" message — the initially-assumed
+ * "Aucune offre" copy does not exist. Instead the same heading that shows
+ * "55 offres" for a populated search shows "0 offre" (singular) for an
+ * empty one, so emptiness is a parsed `0`, not a matched string.
+ *
+ * Returns the parsed integer, or `null` when no `<h1>` on the page matches
+ * the count pattern at all — which the caller treats as a markup change
+ * (the heading moved or was restructured), not an empty result.
  */
-async function waitForResultsToRender(page: Page): Promise<void> {
-  await Promise.race([
-    page.locator(LISTING_CARD_SELECTOR).first().waitFor({
-      state: "attached",
-      timeout: 15000,
-    }),
-    page.getByText(NO_RESULTS_TEXT).first().waitFor({
-      state: "visible",
-      timeout: 15000,
-    }),
-  ]);
+async function readResultCount(page: Page): Promise<number | null> {
+  // Server-rendered, so normally already attached; the bounded wait just
+  // covers a slow initial paint.
+  await page
+    .locator(COUNT_HEADING_SELECTOR)
+    .first()
+    .waitFor({ state: "attached", timeout: 15000 })
+    .catch(() => {});
+
+  const headings = await page.locator(COUNT_HEADING_SELECTOR).allInnerTexts();
+  for (const text of headings) {
+    const match = text.match(RESULT_COUNT_RE);
+    if (match) {
+      return Number.parseInt(match[1].replace(/\D/g, ""), 10);
+    }
+  }
+  return null;
 }
 
 /**
- * Navigates to and captures one page of HelloWork search results. Same shape
- * as `captureApecPage`: dismiss cookie consent, check for a bot-verification
- * interstitial, wait for the results list, read one raw text blob + the
- * detail href per card (Playwright captures, Claude structures — CLAUDE.md
+ * Navigates to and captures one page of HelloWork search results.
+ *
+ * Same contract as `captureApecPage`: dismiss cookie consent, check for a
+ * bot-verification interstitial, then read one raw text blob + the detail
+ * href per card (Playwright captures, Claude structures — CLAUDE.md
  * decision #1).
+ *
+ * Empty results vs. markup change: HelloWork's `<h1>` count heading is the
+ * source of truth. A parsed `0` is a legitimate empty result and returns
+ * `{ listings: [], hasMore: false }`. A heading that can't be found or
+ * parsed, or a non-zero count with no matching cards, is a markup change →
+ * {@link ScrapeMarkupError}.
+ *
+ * Pagination: HelloWork's pager is a set of `<button type="submit" name="p"
+ * value="N" form="searchForm">` elements, one per page — not links. This
+ * function never clicks them; each page is fetched by rebuilding the URL
+ * with {@link buildHelloworkSearchUrl} (the button just submits that same
+ * `p=N` change through Turbo, so a direct navigation is equivalent and
+ * avoids an unnecessary DOM interaction). `hasMore` is therefore detected
+ * structurally: does a button for the *next* HelloWork page number exist in
+ * the pager? The `name`/`value` attributes are the stable part — the arrow
+ * icon and Tailwind classes are not.
  *
  * Throws — never retried or worked around (SPEC.md §2, §5):
  * - {@link ScrapeBlockedError} on a recognized bot-challenge interstitial;
- * - {@link ScrapeMarkupError} when results never render, or cards are
- *   counted but the anchor structure doesn't match.
- *
- * @see the file header — all selectors are UNVERIFIED (TODO(verify)).
+ * - {@link ScrapeMarkupError} on an unrecognized page shape (see above).
  */
 export async function captureHelloworkPage(
   page: Page,
@@ -95,7 +123,7 @@ export async function captureHelloworkPage(
     keywords: string;
     location?: string | null;
     lookback: LookbackWindow;
-    page: number;
+    page: number; // 0-indexed (runner convention)
   },
 ): Promise<HelloworkPageResult> {
   const url = buildHelloworkSearchUrl(params);
@@ -109,17 +137,21 @@ export async function captureHelloworkPage(
 
   await dismissCookieConsent(page);
 
-  try {
-    await waitForResultsToRender(page);
-  } catch {
+  const resultCount = await readResultCount(page);
+  if (resultCount === null) {
     throw new ScrapeMarkupError(
-      "HelloWork page did not render listings or a no-results message in time",
+      "HelloWork results-count heading not found — page structure changed",
     );
+  }
+  if (resultCount === 0) {
+    return { listings: [], hasMore: false };
   }
 
   const cardCount = await page.locator(LISTING_CARD_SELECTOR).count();
   if (cardCount === 0) {
-    return { listings: [], hasMore: false };
+    throw new ScrapeMarkupError(
+      `HelloWork reported ${resultCount} result(s) but no cards matched ${LISTING_CARD_SELECTOR}`,
+    );
   }
 
   const rawCards = await page.locator(LISTING_CARD_SELECTOR).evaluateAll(
@@ -131,7 +163,7 @@ export async function captureHelloworkPage(
           rawText: (card as HTMLElement).innerText ?? "",
         };
       }),
-    RESULT_LINK_SELECTOR,
+    LISTING_LINK_SELECTOR,
   );
 
   if (rawCards.every((card) => !card.href)) {
@@ -155,7 +187,12 @@ export async function captureHelloworkPage(
     });
   });
 
-  const hasMore = (await page.locator(NEXT_PAGE_SELECTOR).count()) > 0;
+  // params.page is 0-indexed; HelloWork's page number is params.page + 1, so
+  // the next page's submit button carries value params.page + 2.
+  const nextPageValue = params.page + 2;
+  const hasMore =
+    (await page.locator(`button[name="p"][value="${nextPageValue}"]`).count()) >
+    0;
 
   return { listings, hasMore };
 }

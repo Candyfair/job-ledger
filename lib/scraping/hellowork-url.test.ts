@@ -9,8 +9,9 @@ function parse(url: string) {
 }
 
 // Query params verified 2026-08-28 via manual DevTools inspection — see the
-// hellowork-url.ts header. (The DOM selectors in hellowork-scraper.ts are
-// still unverified and untested.)
+// hellowork-url.ts header. (hellowork-scraper.ts's DOM logic isn't
+// unit-tested — no live browser in CI, per CLAUDE.md; run
+// `npm run test:scrape:hellowork` for an end-to-end check.)
 describe("buildHelloworkSearchUrl", () => {
   it("sets the keyword param", () => {
     const url = parse(

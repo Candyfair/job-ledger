@@ -18,11 +18,6 @@ import { captureHelloworkPage } from "@/lib/scraping/hellowork-scraper";
  * `queue.concurrencyLimit: 1` gives HelloWork the "limited per-site
  * concurrency" politeness guarantee (SPEC.md §7) — runs against HelloWork
  * serialize, runs against other sites are unaffected.
- *
- * NOTE: `captureHelloworkPage`'s selectors and `buildHelloworkSearchUrl`'s
- * params are UNVERIFIED scaffolding (see those files' headers) — a live run
- * will fail with a `markup_broken` `SiteStatus` write until they're
- * confirmed.
  */
 export const scrapeHellowork = task({
   id: "scrape-hellowork",
