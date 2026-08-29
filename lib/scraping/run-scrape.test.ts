@@ -172,3 +172,67 @@ describe("runSiteScrape — ScrapeRun reuse vs create", () => {
     expect(insertedTables).not.toContain(listing);
   });
 });
+
+describe("runSiteScrape — VOLUME_CAP enforcement (SPEC.md §7)", () => {
+  function makeCaptured(count: number, prefix: string) {
+    return Array.from({ length: count }, (_, i) => ({
+      listingId: `${prefix}_${i}`,
+      url: `https://apec.fr/${prefix}_${i}`,
+      rawText: "raw",
+    }));
+  }
+
+  function extractedFor(captured: { listingId: string }[]) {
+    return captured.map((c) => ({
+      listingId: c.listingId,
+      title: "Développeur",
+      company: null,
+      companyNormalized: null,
+      roleCanonical: null,
+      datePosted: today,
+      salaryRaw: null,
+    }));
+  }
+
+  it("truncates mid-page once the cap is reached and does not fetch a further page", async () => {
+    const insertChain = mockDrizzleChain([{ id: "run-1" }]);
+    vi.mocked(db.insert).mockReturnValue(insertChain as never);
+
+    // Page 1 lands 40 in-window listings (under the cap); page 2 lands 20
+    // more, which would carry `collected` from 40 to 60 if nothing stopped
+    // it mid-page. A third page is queued behind `hasMore: true` on page 2
+    // and must never be fetched.
+    const page1 = makeCaptured(40, "p0");
+    const page2 = makeCaptured(20, "p1");
+    const page3 = makeCaptured(5, "p2");
+
+    const capturePage: CaptureSitePage = vi
+      .fn()
+      .mockResolvedValueOnce({ listings: page1, hasMore: true })
+      .mockResolvedValueOnce({ listings: page2, hasMore: true })
+      .mockResolvedValueOnce({ listings: page3, hasMore: false });
+
+    const extractionAdapter: ExtractionAdapter = {
+      extractListings: vi
+        .fn()
+        .mockResolvedValueOnce(extractedFor(page1))
+        .mockResolvedValueOnce(extractedFor(page2))
+        .mockResolvedValueOnce(extractedFor(page3)),
+    };
+
+    const result = await runSiteScrape({
+      site: "apec",
+      capturePage,
+      payload: { jobConfigId: "jc-1", lookback: { type: "3d" } },
+      extractionAdapter,
+    });
+
+    expect(result.listingCount).toBe(50);
+    expect(capturePage).toHaveBeenCalledTimes(2);
+
+    const insertedRows = insertChain.values.mock.calls
+      .map((call) => call[0])
+      .find((arg): arg is unknown[] => Array.isArray(arg));
+    expect(insertedRows).toHaveLength(50);
+  });
+});

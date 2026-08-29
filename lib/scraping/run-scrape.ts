@@ -184,10 +184,19 @@ export async function runSiteScrape({
             salaryRaw: item.salaryRaw,
             url: item.url,
           });
+          // The outer `while` guard is only re-checked once a page finishes,
+          // but a single page's in-window listings can carry `collected`
+          // past VOLUME_CAP before that happens (SPEC.md §7). Stop pushing
+          // and suppress the next page fetch as soon as the cap is hit,
+          // rather than truncating the array after the fact.
+          if (collected.length >= VOLUME_CAP) {
+            hasMore = false;
+            break;
+          }
         }
       }
 
-      hasMore = more;
+      hasMore = more && hasMore;
       pageNum += 1;
     }
   } catch (error) {
