@@ -1,7 +1,12 @@
 import { chromium, type Page } from "playwright";
-import { eq } from "drizzle-orm";
+import { eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { jobConfig, listing, scrapeRun } from "@/drizzle/schema";
+import {
+  exclusionKeyword,
+  jobConfig,
+  listing,
+  scrapeRun,
+} from "@/drizzle/schema";
 import type { Site } from "@/lib/sites";
 import { ClaudeHaikuAdapter } from "@/lib/extraction/claude-haiku";
 import type { ExtractionAdapter } from "@/lib/extraction/adapter";
@@ -10,6 +15,7 @@ import {
   isWithinLookbackWindow,
   type LookbackWindow,
 } from "@/lib/extraction/lookback-window";
+import { matchExclusionKeywords } from "@/lib/filters/exclusion-matching";
 import { sleep, randomDelayMs, SCRAPER_USER_AGENT } from "./politeness";
 import { buildDelimitedContent } from "./delimited-content";
 import { markSiteFailed } from "./site-status";
@@ -107,6 +113,17 @@ interface RunSiteScrapeResult {
  *   the caller rolls per-site outcomes up.
  * - `Listing` (bulk insert): only when at least one in-window listing was
  *   collected.
+ *
+ * `Listing.excludedByKeyword` is computed here, at write time, rather than
+ * lazily at read time: the `ExclusionKeyword` list for `payload.userId` is
+ * fetched once per run (not once per listing) and each collected listing's
+ * title is checked against it via {@link matchExclusionKeywords} right
+ * before the bulk insert, so every inserted row always carries an array
+ * (never `null`) — empty when nothing matched. Anonymous runs
+ * (`payload.userId` absent) look up the global list (`userId IS NULL`)
+ * instead of a specific user's list; today that list is always empty since
+ * nothing seeds it, so anonymous runs get no exclusions applied — intended
+ * v1 behavior, not a gap.
  *
  * `payload.lookback.since` is coerced back to a real `Date` here: an
  * externally-triggered payload crosses a JSON serialization boundary and
@@ -208,6 +225,16 @@ export async function runSiteScrape({
 
   await browser.close();
 
+  const exclusionRows = await db
+    .select()
+    .from(exclusionKeyword)
+    .where(
+      payload.userId
+        ? eq(exclusionKeyword.userId, payload.userId)
+        : isNull(exclusionKeyword.userId),
+    );
+  const exclusionKeywords = exclusionRows.map((row) => row.keyword);
+
   let scrapeRunId: string;
   let status: RunSiteScrapeResult["status"] = null;
 
@@ -242,6 +269,10 @@ export async function runSiteScrape({
         datePosted: item.datePosted,
         salaryRaw: item.salaryRaw,
         url: item.url,
+        excludedByKeyword: matchExclusionKeywords(
+          item.title,
+          exclusionKeywords,
+        ),
       })),
     );
   }

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { scrapeRun, listing } from "@/drizzle/schema";
+import { scrapeRun, listing, exclusionKeyword } from "@/drizzle/schema";
 import { mockDrizzleChain } from "@/lib/test/mock-db";
 import { markSiteFailed } from "./site-status";
 import { ScrapeBlockedError, ScrapeMarkupError } from "./errors";
@@ -60,7 +61,12 @@ const oneExtractedEntry = [
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(db.select).mockReturnValue(mockDrizzleChain([CONFIG]) as never);
+  // First `db.select()` call is the `jobConfig` lookup; every subsequent
+  // call (the `exclusionKeyword` fetch) defaults to an empty list so
+  // pre-existing tests that don't care about exclusions see no keywords.
+  vi.mocked(db.select)
+    .mockReturnValueOnce(mockDrizzleChain([CONFIG]) as never)
+    .mockReturnValue(mockDrizzleChain([]) as never);
   vi.mocked(db.insert).mockReturnValue(
     mockDrizzleChain([{ id: "run-1" }]) as never,
   );
@@ -234,5 +240,113 @@ describe("runSiteScrape — VOLUME_CAP enforcement (SPEC.md §7)", () => {
       .map((call) => call[0])
       .find((arg): arg is unknown[] => Array.isArray(arg));
     expect(insertedRows).toHaveLength(50);
+  });
+});
+
+describe("runSiteScrape — exclusion-keyword tagging", () => {
+  it("tags a listing whose title matches a configured keyword, preserving casing", async () => {
+    const insertChain = mockDrizzleChain([{ id: "run-1" }]);
+    vi.mocked(db.insert).mockReturnValue(insertChain as never);
+    vi.mocked(db.select).mockReturnValueOnce(
+      mockDrizzleChain([{ keyword: "PHP" }]) as never,
+    );
+
+    const entries = [{ ...oneExtractedEntry[0], title: "Développeur PHP" }];
+
+    await runSiteScrape({
+      site: "apec",
+      capturePage: onePageCapture,
+      payload: { jobConfigId: "jc-1", lookback: { type: "3d" }, userId: "u-1" },
+      extractionAdapter: adapterReturning(entries),
+    });
+
+    const insertedRows = insertChain.values.mock.calls
+      .map((call) => call[0])
+      .find((arg): arg is { title: string; excludedByKeyword: string[] }[] =>
+        Array.isArray(arg),
+      );
+    expect(insertedRows?.[0].excludedByKeyword).toEqual(["PHP"]);
+  });
+
+  it("gives a non-matching listing an empty excludedByKeyword array", async () => {
+    const insertChain = mockDrizzleChain([{ id: "run-1" }]);
+    vi.mocked(db.insert).mockReturnValue(insertChain as never);
+    vi.mocked(db.select).mockReturnValueOnce(
+      mockDrizzleChain([{ keyword: "Manager" }]) as never,
+    );
+
+    await runSiteScrape({
+      site: "apec",
+      capturePage: onePageCapture,
+      payload: { jobConfigId: "jc-1", lookback: { type: "3d" }, userId: "u-1" },
+      extractionAdapter: adapterReturning(oneExtractedEntry),
+    });
+
+    const insertedRows = insertChain.values.mock.calls
+      .map((call) => call[0])
+      .find((arg): arg is { title: string; excludedByKeyword: string[] }[] =>
+        Array.isArray(arg),
+      );
+    expect(insertedRows?.[0].excludedByKeyword).toEqual([]);
+  });
+
+  it("scopes the exclusion-keyword query to userId IS NULL when payload.userId is omitted", async () => {
+    // `beforeEach` already queues one return value for `db.select`; reset
+    // here so this test's two calls (jobConfig, then exclusionKeyword) are
+    // fully controlled and nothing leaks into the next test.
+    const exclusionSelectChain = mockDrizzleChain([]);
+    vi.mocked(db.select).mockReset();
+    vi.mocked(db.select)
+      .mockReturnValueOnce(mockDrizzleChain([CONFIG]) as never)
+      .mockReturnValueOnce(exclusionSelectChain as never);
+
+    await runSiteScrape({
+      site: "apec",
+      capturePage: onePageCapture,
+      // userId intentionally omitted — anonymous run.
+      payload: { jobConfigId: "jc-1", lookback: { type: "3d" } },
+      extractionAdapter: adapterReturning(oneExtractedEntry),
+    });
+
+    const fromChain = exclusionSelectChain.from.mock.results[0]
+      .value as ReturnType<typeof mockDrizzleChain>;
+    const whereArg = fromChain.where.mock.calls[0][0];
+    expect(whereArg).toEqual(isNull(exclusionKeyword.userId));
+  });
+
+  it("fetches the exclusion-keyword list exactly once per call, not once per listing", async () => {
+    const insertChain = mockDrizzleChain([{ id: "run-1" }]);
+    vi.mocked(db.insert).mockReturnValue(insertChain as never);
+    // Reset for the same reason as the test above — full control over both
+    // of this test's `db.select` calls.
+    vi.mocked(db.select).mockReset();
+    vi.mocked(db.select)
+      .mockReturnValueOnce(mockDrizzleChain([CONFIG]) as never)
+      .mockReturnValueOnce(mockDrizzleChain([{ keyword: "PHP" }]) as never);
+
+    const captured = [
+      { listingId: "l0_0", url: "https://apec.fr/1", rawText: "raw" },
+      { listingId: "l0_1", url: "https://apec.fr/2", rawText: "raw" },
+      { listingId: "l0_2", url: "https://apec.fr/3", rawText: "raw" },
+    ];
+    const capturePage: CaptureSitePage = vi.fn(async () => ({
+      listings: captured,
+      hasMore: false,
+    }));
+    const entries = captured.map((c) => ({
+      ...oneExtractedEntry[0],
+      listingId: c.listingId,
+    }));
+
+    await runSiteScrape({
+      site: "apec",
+      capturePage,
+      payload: { jobConfigId: "jc-1", lookback: { type: "3d" }, userId: "u-1" },
+      extractionAdapter: adapterReturning(entries),
+    });
+
+    // One call for the `jobConfig` lookup, one for the `exclusionKeyword`
+    // fetch — never one per collected listing.
+    expect(db.select).toHaveBeenCalledTimes(2);
   });
 });
