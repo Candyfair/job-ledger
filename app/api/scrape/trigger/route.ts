@@ -13,11 +13,15 @@ import type { ScrapeSitePayload } from "@/lib/scraping/run-scrape";
 import type { scrapeApec } from "@/trigger/scrape-apec";
 import type { scrapeHellowork } from "@/trigger/scrape-hellowork";
 
-// Only claude_haiku has an ExtractionAdapter today (see adapter-registry.ts);
-// deepseek_v4_flash is reserved on the enum but not yet accepted here, so a
-// request for it gets a clear 400 instead of a Trigger.dev task failing
-// mid-run.
-const AVAILABLE_MODELS: readonly ModelUsed[] = ["claude_haiku"];
+// Both models have a real ExtractionAdapter now (see adapter-registry.ts).
+// Kept as an explicit allowlist — rather than trusting the persisted enum
+// directly — so a model reserved on `modelUsedEnum` ahead of its adapter
+// being wired still gets a clear 400 here instead of a Trigger.dev task
+// failing mid-run.
+const AVAILABLE_MODELS: readonly ModelUsed[] = [
+  "claude_haiku",
+  "deepseek_v4_flash",
+];
 
 function getClientIp(request: Request): string {
   const forwardedFor = request.headers.get("x-forwarded-for");
@@ -136,8 +140,11 @@ export async function POST(request: Request) {
   const session = await requireSession();
 
   let resolvedJobConfigIds: string[] = [];
-  let adHocConfig: { keywords: string[]; location?: string | null } | null =
-    null;
+  let adHocConfig: {
+    title: string;
+    keywords: string[];
+    location?: string | null;
+  } | null = null;
 
   if (session) {
     if (
@@ -187,6 +194,7 @@ export async function POST(request: Request) {
     }
 
     adHocConfig = {
+      title: adHocSearch.title.trim(),
       keywords: adHocSearch.keywords,
       location: adHocSearch.location ?? null,
     };

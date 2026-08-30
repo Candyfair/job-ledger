@@ -126,6 +126,12 @@ describe("POST /api/scrape/trigger — anonymous", () => {
     expect(body).toEqual({ runId: "run-2" });
     expect(db.select).not.toHaveBeenCalled();
     expect(tasks.trigger).toHaveBeenCalledTimes(1);
+    expect(tasks.trigger).toHaveBeenCalledWith(
+      "scrape-apec",
+      expect.objectContaining({
+        adHocConfig: { title: "Dev", keywords: ["react"], location: "Lyon" },
+      }),
+    );
   });
 
   it("returns 400 when adHocSearch is missing", async () => {
@@ -147,7 +153,30 @@ describe("POST /api/scrape/trigger — anonymous", () => {
 });
 
 describe("POST /api/scrape/trigger — model validation", () => {
-  it("returns 400 for a model with no implemented adapter (deepseek_v4_flash)", async () => {
+  it("returns 400 for a model that isn't a recognized ModelUsed value", async () => {
+    const res = await POST(
+      triggerRequest({
+        lookbackWindow: "24h",
+        sites: ["apec"],
+        model: "gpt-4",
+        jobConfigIds: ["jc-1"],
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(requireSession).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("accepts deepseek_v4_flash now that it has an implemented adapter", async () => {
+    vi.mocked(requireSession).mockResolvedValue(authSession as never);
+    vi.mocked(db.select).mockReturnValue(
+      mockDrizzleChain([{ id: "jc-1" }]) as never,
+    );
+    vi.mocked(db.insert).mockReturnValue(
+      mockDrizzleChain([{ id: "run-3" }]) as never,
+    );
+
     const res = await POST(
       triggerRequest({
         lookbackWindow: "24h",
@@ -157,9 +186,11 @@ describe("POST /api/scrape/trigger — model validation", () => {
       }),
     );
 
-    expect(res.status).toBe(400);
-    expect(requireSession).not.toHaveBeenCalled();
-    expect(db.insert).not.toHaveBeenCalled();
+    expect(res.status).toBe(201);
+    expect(tasks.trigger).toHaveBeenCalledWith(
+      "scrape-apec",
+      expect.objectContaining({ model: "deepseek_v4_flash" }),
+    );
   });
 });
 

@@ -71,8 +71,12 @@ export interface ScrapeSitePayload {
   jobConfigId?: string;
   /** Inline, never-persisted search params for an anonymous ad-hoc run
    * (`/api/scrape/trigger`'s `adHocSearch` field) — there is no `JobConfig`
-   * row to look up, so this bypasses the DB lookup entirely. */
-  adHocConfig?: { keywords: string[]; location?: string | null };
+   * row to look up, so this bypasses the DB lookup entirely. `title` is
+   * folded into the search string alongside `keywords` (see
+   * {@link runSiteScrape}) rather than stored separately — an ad-hoc search
+   * has no persisted row to hang a display-only label off of, unlike
+   * `JobConfig.title`. */
+  adHocConfig?: { title: string; keywords: string[]; location?: string | null };
   lookback: LookbackWindow;
   userId?: string | null;
   scrapeRunId?: string;
@@ -226,9 +230,14 @@ async function recordKillSwitchSkip(
  * JSON boundary with no schema validation (see the `since: Date` note
  * below). `jobConfigId` looks up a persisted `JobConfig` row as before;
  * `adHocConfig` (anonymous ad-hoc search, `/api/scrape/trigger`) skips that
- * DB lookup entirely and uses its `keywords`/`location` directly, since an
- * ad-hoc search is explicitly never persisted (SPEC.md §3) — there is no
- * row to look up. `ScrapeRun.jobConfigsIncluded` is `[]` on the ad-hoc path.
+ * DB lookup entirely and uses its `title`/`keywords`/`location` directly,
+ * since an ad-hoc search is explicitly never persisted (SPEC.md §3) — there
+ * is no row to look up. Unlike the `JobConfig` path (where `title` is only
+ * ever a display label — `config.keywords` alone drives the search string),
+ * `adHocConfig.title` is folded into the search string here: an ad-hoc
+ * search has no separate label field for it to be, so dropping it would
+ * silently discard a value the caller was required to provide.
+ * `ScrapeRun.jobConfigsIncluded` is `[]` on the ad-hoc path.
  *
  * `payload.model` selects the extraction adapter via
  * {@link getExtractionAdapter} and is written to `ScrapeRun.modelUsed`;
@@ -278,7 +287,9 @@ export async function runSiteScrape({
     location = config.location;
     resolvedJobConfigId = config.id;
   } else {
-    keywords = payload.adHocConfig!.keywords.join(" ");
+    keywords = [payload.adHocConfig!.title, ...payload.adHocConfig!.keywords]
+      .join(" ")
+      .trim();
     location = payload.adHocConfig!.location ?? null;
   }
 

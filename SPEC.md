@@ -126,10 +126,15 @@ exhaustive coverage.
   {
     lookbackWindow: '24h' | '3d' | { since: string }; // ISO 8601 date
     sites: SiteId[];
-    model: string;              // only "claude_haiku" is accepted today —
-                                 // "deepseek_v4_flash" is reserved on the
-                                 // enum but has no adapter yet and is
-                                 // rejected with 400 (see CLAUDE.md decision #2)
+    model: string;              // "claude_haiku" or "deepseek_v4_flash" —
+                                 // both have a real adapter and are accepted;
+                                 // an allowlist still gates this rather than
+                                 // trusting the persisted enum directly, so a
+                                 // model reserved on the enum ahead of its
+                                 // adapter being wired gets a clear 400 here
+                                 // instead of a Trigger.dev task failing
+                                 // mid-run (adapter pattern: CLAUDE.md
+                                 // decision #2)
     jobConfigIds?: string[];    // authenticated users only
     adHocSearch?: {             // anonymous users only, never persisted
       title: string;

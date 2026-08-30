@@ -366,7 +366,7 @@ describe("runSiteScrape — jobConfigId / adHocConfig exclusivity", () => {
         capturePage: onePageCapture,
         payload: {
           jobConfigId: "jc-1",
-          adHocConfig: { keywords: ["dev"] },
+          adHocConfig: { title: "Dev", keywords: ["dev"] },
           lookback: { type: "3d" },
         },
         extractionAdapter: adapterReturning([]),
@@ -399,7 +399,7 @@ describe("runSiteScrape — anonymous ad-hoc search", () => {
     vi.mocked(db.select).mockReturnValue(mockDrizzleChain([]) as never);
 
     const capturePage: CaptureSitePage = vi.fn(async (_page, params) => {
-      expect(params.keywords).toBe("react native");
+      expect(params.keywords).toBe("Frontend Engineer react native");
       expect(params.location).toBe("Lyon");
       return { listings: [], hasMore: false };
     });
@@ -408,7 +408,11 @@ describe("runSiteScrape — anonymous ad-hoc search", () => {
       site: "apec",
       capturePage,
       payload: {
-        adHocConfig: { keywords: ["react", "native"], location: "Lyon" },
+        adHocConfig: {
+          title: "Frontend Engineer",
+          keywords: ["react", "native"],
+          location: "Lyon",
+        },
         lookback: { type: "3d" },
       },
       extractionAdapter: adapterReturning([]),

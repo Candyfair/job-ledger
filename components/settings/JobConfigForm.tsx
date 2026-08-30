@@ -12,7 +12,10 @@ function keywordsToInput(keywords: string[]) {
   return keywords.join(", ");
 }
 
-function inputToKeywords(input: string) {
+/** Comma-separated free text → trimmed, non-empty keyword array. Also used
+ * by `components/trigger/AdHocSearchFields.tsx` for the anonymous trigger
+ * form's Keywords field, which maps to the same shape. */
+export function inputToKeywords(input: string) {
   return input
     .split(",")
     .map((k) => k.trim())
