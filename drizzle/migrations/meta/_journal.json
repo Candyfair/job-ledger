@@ -43,6 +43,13 @@
       "when": 1787921243934,
       "tag": "0005_equal_vector",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788093856704,
+      "tag": "0006_flippant_swarm",
+      "breakpoints": true
     }
   ]
 }
