@@ -160,7 +160,7 @@ exhaustive coverage.
 ### Non-functional
 
 - **Rate limiting**: per-IP counters in Postgres (no dedicated service — see DEPLOYMENT.md), enforced on the trigger endpoint. Fixed one-hour window; threshold configurable via `TRIGGER_RATE_LIMIT_PER_HOUR` (default 5).
-- **Volume cap**: 50 listings maximum par run.
+- **Volume cap**: 50 listings maximum per site (each `scrape-<site>` task caps its own output independently — not a shared total across a multi-site run).
 - **Scraping politeness**: randomized inter-request delay between page fetches; limited per-site concurrency (each `scrape-<site>` Trigger.dev task pins `queue.concurrencyLimit: 1`, so runs against one site serialize while different sites still run in parallel); a stable mainstream desktop Chrome user-agent (not the literal Chromium default, whose headless build advertises `HeadlessChrome` — a bot signal on several of these boards; this is a plain request header, not stealth/fingerprint tooling, which §2 rules out).
 - **Security**: see DEPLOYMENT.md for the full mTLS + fail2ban setup.
 - **UI language**: French throughout.
