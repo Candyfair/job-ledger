@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { tasks } from "@trigger.dev/sdk/v3";
 import { POST } from "./route";
 import { db } from "@/lib/db";
@@ -177,6 +177,40 @@ describe("POST /api/scrape/trigger — rate limiting", () => {
     );
 
     expect(res.status).toBe(429);
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(tasks.trigger).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/scrape/trigger — kill switch", () => {
+  const ORIGINAL = process.env.SCRAPING_KILL_SWITCH;
+
+  afterEach(() => {
+    if (ORIGINAL === undefined) {
+      delete process.env.SCRAPING_KILL_SWITCH;
+    } else {
+      process.env.SCRAPING_KILL_SWITCH = ORIGINAL;
+    }
+  });
+
+  it("returns 503 before checking the rate limit or touching the database", async () => {
+    process.env.SCRAPING_KILL_SWITCH = "true";
+
+    const res = await POST(
+      triggerRequest({
+        lookbackWindow: "24h",
+        sites: ["apec"],
+        model: "claude_haiku",
+        jobConfigIds: ["jc-1"],
+      }),
+    );
+    const body = await res.json();
+
+    expect(res.status).toBe(503);
+    expect(body).toEqual({
+      error: "Scraping is temporarily disabled by the administrator",
+    });
+    expect(checkTriggerRateLimit).not.toHaveBeenCalled();
     expect(db.insert).not.toHaveBeenCalled();
     expect(tasks.trigger).not.toHaveBeenCalled();
   });

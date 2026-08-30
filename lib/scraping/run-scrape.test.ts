@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { isNull } from "drizzle-orm";
+import { chromium } from "playwright";
 import { db } from "@/lib/db";
 import { scrapeRun, listing, exclusionKeyword } from "@/drizzle/schema";
 import { mockDrizzleChain } from "@/lib/test/mock-db";
@@ -465,5 +466,84 @@ describe("runSiteScrape — model selection", () => {
           !!arg && typeof arg === "object" && "modelUsed" in arg,
       );
     expect(scrapeRunValues?.modelUsed).toBe("deepseek_v4_flash");
+  });
+});
+
+describe("runSiteScrape — kill switch", () => {
+  const ORIGINAL = process.env.SCRAPING_KILL_SWITCH;
+
+  afterEach(() => {
+    if (ORIGINAL === undefined) {
+      delete process.env.SCRAPING_KILL_SWITCH;
+    } else {
+      process.env.SCRAPING_KILL_SWITCH = ORIGINAL;
+    }
+  });
+
+  it("skips scraping entirely and creates a partial_failure ScrapeRun when scrapeRunId is absent", async () => {
+    process.env.SCRAPING_KILL_SWITCH = "true";
+    const insertChain = mockDrizzleChain([{ id: "run-1" }]);
+    vi.mocked(db.insert).mockReturnValue(insertChain as never);
+
+    const result = await runSiteScrape({
+      site: "apec",
+      capturePage: onePageCapture,
+      payload: { jobConfigId: "jc-1", lookback: { type: "3d" } },
+      extractionAdapter: adapterReturning(oneExtractedEntry),
+    });
+
+    expect(result).toEqual({
+      scrapeRunId: "run-1",
+      listingCount: 0,
+      status: "partial_failure",
+      anyPageExtractionFailed: false,
+    });
+    expect(chromium.launch).not.toHaveBeenCalled();
+    expect(onePageCapture).not.toHaveBeenCalled();
+    expect(markSiteFailed).not.toHaveBeenCalled();
+    expect(db.insert).toHaveBeenCalledWith(scrapeRun);
+    expect(insertChain.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "partial_failure",
+        sitesIncluded: ["apec"],
+      }),
+    );
+    expect(vi.mocked(db.insert).mock.calls.map((c) => c[0])).not.toContain(
+      listing,
+    );
+  });
+
+  it("leaves an already-queued task's shared ScrapeRun untouched and only warns, without touching SiteStatus", async () => {
+    process.env.SCRAPING_KILL_SWITCH = "true";
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const result = await runSiteScrape({
+      site: "hellowork",
+      capturePage: onePageCapture,
+      payload: {
+        jobConfigId: "jc-1",
+        lookback: { type: "3d" },
+        scrapeRunId: "existing-run",
+      },
+      extractionAdapter: adapterReturning(oneExtractedEntry),
+    });
+
+    expect(result).toEqual({
+      scrapeRunId: "existing-run",
+      listingCount: 0,
+      status: null,
+      anyPageExtractionFailed: false,
+    });
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("existing-run"),
+    );
+    expect(chromium.launch).not.toHaveBeenCalled();
+    expect(onePageCapture).not.toHaveBeenCalled();
+    expect(markSiteFailed).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(db.update).toBeUndefined();
+
+    warnSpy.mockRestore();
   });
 });

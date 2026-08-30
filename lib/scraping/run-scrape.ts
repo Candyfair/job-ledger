@@ -23,6 +23,7 @@ import { sleep, randomDelayMs, SCRAPER_USER_AGENT } from "./politeness";
 import { buildDelimitedContent } from "./delimited-content";
 import { markSiteFailed } from "./site-status";
 import { describeScrapeError } from "./errors";
+import { isKillSwitchActive } from "./kill-switch";
 
 // SPEC.md §7 — hard ceiling on listings persisted per run, independent of the
 // model or the number of result pages a site has.
@@ -109,10 +110,89 @@ interface RunSiteScrapeResult {
 }
 
 /**
+ * Records a site's contribution to a run as skipped because the global kill
+ * switch (`SCRAPING_KILL_SWITCH`, see `./kill-switch.ts`) was active — either
+ * at trigger time, or flipped after this task was already queued in
+ * Trigger.dev. Deliberately does not touch `SiteStatus`/`lastFailureCause`:
+ * that table means "this site's markup or bot-protection needs a human to
+ * look at it," and an operator-initiated stop is neither, so recording it
+ * there would mislead an admin reading the settings page later.
+ *
+ * The two branches are not symmetric, on purpose:
+ * - `payload.scrapeRunId` absent: this task is about to create its own
+ *   `ScrapeRun` row, so there is no contention — writing
+ *   `status: "partial_failure"` here is a normal, self-contained insert,
+ *   the same shape as the existing `completed`/`partial_failure` decision
+ *   below for a non-killed run.
+ * - `payload.scrapeRunId` present: the row is shared with sibling tasks
+ *   from the same fan-out (SPEC.md §7 — one task per (site, jobConfig)
+ *   pair against one `ScrapeRun`). No code path writes to an existing
+ *   run's `status` today — not on success, not on `markup_broken` /
+ *   `bot_challenge` — because nothing yet reconciles per-site outcomes
+ *   into a final value (`GET /api/scrape/status/:runId`, SPEC.md §7, is
+ *   spec'd but unbuilt). Writing `partial_failure` straight into that
+ *   column here would be the first such write, and nothing would ever
+ *   correct it even if every sibling site went on to succeed. So this
+ *   branch leaves `ScrapeRun.status` untouched — same as the other
+ *   failure causes — and only `console.warn`s, matching the existing
+ *   soft-signal convention in `apec-scraper.ts` / `hellowork-scraper.ts`.
+ */
+async function recordKillSwitchSkip(
+  site: Site,
+  payload: ScrapeSitePayload,
+): Promise<RunSiteScrapeResult> {
+  const lookback: LookbackWindow =
+    payload.lookback.type === "since_date"
+      ? { type: "since_date", since: new Date(payload.lookback.since) }
+      : payload.lookback;
+
+  if (payload.scrapeRunId) {
+    console.warn(
+      `Kill switch active — skipping ${site} for ScrapeRun ${payload.scrapeRunId}`,
+    );
+
+    return {
+      scrapeRunId: payload.scrapeRunId,
+      listingCount: 0,
+      status: null,
+      anyPageExtractionFailed: false,
+    };
+  }
+
+  const [run] = await db
+    .insert(scrapeRun)
+    .values({
+      userId: payload.userId ?? null,
+      lookbackWindowType: lookback.type,
+      lookbackSince: lookback.type === "since_date" ? lookback.since : null,
+      modelUsed: payload.model ?? "claude_haiku",
+      sitesIncluded: [site],
+      // The kill switch trips before the JobConfig lookup runs, so there is
+      // no resolved id to record here even when payload.jobConfigId was set.
+      jobConfigsIncluded: [],
+      status: "partial_failure",
+    })
+    .returning();
+
+  return {
+    scrapeRunId: run.id,
+    listingCount: 0,
+    status: "partial_failure",
+    anyPageExtractionFailed: false,
+  };
+}
+
+/**
  * The shared body of every `scrape-<site>` task: paginate the site's results
  * with a randomized delay between pages, structure each page through the
  * extraction adapter, re-attach captured URLs, keep only listings inside the
  * lookback window, and persist up to {@link VOLUME_CAP} of them.
+ *
+ * Checks the kill switch (`isKillSwitchActive`) before anything else —
+ * before payload validation, the `JobConfig` lookup, and certainly before
+ * launching Playwright — and short-circuits to {@link recordKillSwitchSkip}
+ * when active. This guards against a task that was already queued before an
+ * operator flipped the switch.
  *
  * Side effects:
  * - `SiteStatus` (upsert, via `markSiteFailed`): only when the scrape loop
@@ -122,7 +202,10 @@ interface RunSiteScrapeResult {
  *   `partial_failure`.
  * - `ScrapeRun` (insert): only when `payload.scrapeRunId` is absent. When it
  *   is provided the row already exists and its `status` is left untouched —
- *   the caller rolls per-site outcomes up.
+ *   the caller rolls per-site outcomes up. This holds for the kill switch
+ *   too: {@link recordKillSwitchSkip} only inserts a new row on the
+ *   `scrapeRunId`-absent path; on the shared-row path it logs and leaves
+ *   `status` alone, same as every other failure cause today.
  * - `Listing` (bulk insert): only when at least one in-window listing was
  *   collected.
  *
@@ -167,6 +250,10 @@ export async function runSiteScrape({
   payload,
   extractionAdapter,
 }: RunSiteScrapeOptions): Promise<RunSiteScrapeResult> {
+  if (isKillSwitchActive()) {
+    return recordKillSwitchSkip(site, payload);
+  }
+
   if (!!payload.jobConfigId === !!payload.adHocConfig) {
     throw new Error(
       "runSiteScrape requires exactly one of payload.jobConfigId or payload.adHocConfig",

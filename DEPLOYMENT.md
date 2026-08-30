@@ -91,9 +91,11 @@ the machine, so there's nothing for it to protect against there.
 | Better Auth secret + OAuth client IDs/secrets (GitHub, Google) | Vercel                                                                             |
 | SSH deploy key (migrations)                                    | GitHub Actions secret only                                                         |
 | Trigger.dev access token                                       | GitHub (if a manual Actions step is ever needed instead of the native integration) |
+| `SCRAPING_KILL_SWITCH`                                         | Vercel, Trigger.dev                                                                |
 
 ## Incident Runbook (to expand as real incidents happen)
 
 - **VPS down**: app degrades — dashboard/settings reads fail, scraping runs fail at the write step. No automatic failover; manual VPS restart required.
 - **Client certificate needs rotation**: regenerate via the CA, update the secret in both Vercel and Trigger.dev, redeploy both.
 - **fail2ban locks out a legitimate IP** (e.g., after a burst of failed migration attempts): manual `fail2ban-client unban <ip>` on the VPS.
+- **Cost/abuse spike**: set `SCRAPING_KILL_SWITCH=true` in Vercel and Trigger.dev, redeploy both. Rejects new triggers at `/api/scrape/trigger` (503) and short-circuits any already-queued `scrape-<site>` task before it launches Playwright or calls the extraction adapter.

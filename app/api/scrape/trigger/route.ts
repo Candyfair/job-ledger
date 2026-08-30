@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { jobConfig, scrapeRun } from "@/drizzle/schema";
 import { requireSession } from "@/lib/require-session";
 import { checkTriggerRateLimit } from "@/lib/rate-limit/trigger-rate-limit";
+import { isKillSwitchActive } from "@/lib/scraping/kill-switch";
 import { SITES, type Site } from "@/lib/sites";
 import type { ModelUsed } from "@/lib/extraction/adapter-registry";
 import type { LookbackWindow } from "@/lib/extraction/lookback-window";
@@ -79,8 +80,22 @@ function triggerSiteTask(site: Site, payload: ScrapeSitePayload) {
  * unit above (each task independently writes `Listing` rows and may upsert
  * `SiteStatus` — see `runSiteScrape`). Task completion is never awaited —
  * this only waits for Trigger.dev to acknowledge the enqueue.
+ *
+ * The kill switch (`isKillSwitchActive`) is checked before the rate limit
+ * and before any database access — an operator-initiated stop takes
+ * priority over even counting the request. It returns 503, not 429: this is
+ * "the service is deliberately off," not "you're sending too many
+ * requests," so it gets its own status code despite sharing the
+ * `{ error }` body shape with the rate-limit rejection.
  */
 export async function POST(request: Request) {
+  if (isKillSwitchActive()) {
+    return NextResponse.json(
+      { error: "Scraping is temporarily disabled by the administrator" },
+      { status: 503 },
+    );
+  }
+
   const ip = getClientIp(request);
   const { allowed } = await checkTriggerRateLimit(ip);
   if (!allowed) {
