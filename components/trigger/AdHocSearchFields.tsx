@@ -54,7 +54,7 @@ export function AdHocSearchFields({
           value={values.title}
           onChange={(e) => onChange({ ...values, title: e.target.value })}
           placeholder="e.g. Senior Frontend Engineer"
-          className="rounded border border-zinc-300 px-3 py-2 text-sm"
+          className="rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
         />
       </div>
 
@@ -72,7 +72,7 @@ export function AdHocSearchFields({
             onChange({ ...values, keywordsInput: e.target.value })
           }
           placeholder="e.g. React, TypeScript"
-          className="rounded border border-zinc-300 px-3 py-2 text-sm"
+          className="rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
         />
       </div>
 
@@ -88,7 +88,7 @@ export function AdHocSearchFields({
           value={values.location}
           onChange={(e) => onChange({ ...values, location: e.target.value })}
           placeholder="e.g. Paris or Remote"
-          className="rounded border border-zinc-300 px-3 py-2 text-sm"
+          className="rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
         />
       </div>
     </div>

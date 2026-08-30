@@ -128,7 +128,7 @@ export function TriggerScrapeClient({
     <div className="flex flex-1 flex-col bg-zinc-50">
       <header className="border-b-4 border-black bg-zinc-100 px-6 py-6">
         <div className="mx-auto flex max-w-2xl items-baseline justify-between">
-          <h1 className="text-3xl font-bold">Trigger a Scrape</h1>
+          <h1 className="text-3xl font-bold text-zinc-900">Trigger a Scrape</h1>
           <Link
             href="/"
             className="text-xs font-medium tracking-wide text-blue-700 hover:underline"
@@ -156,7 +156,9 @@ export function TriggerScrapeClient({
         <form onSubmit={handleSubmit} className="flex flex-col gap-10">
           <section className="flex flex-col gap-4">
             <div>
-              <h2 className="text-lg font-semibold">Lookback window</h2>
+              <h2 className="text-lg font-semibold text-zinc-900">
+                Lookback window
+              </h2>
               <p className="text-sm text-zinc-600">
                 How far back to pull listings from each site.
               </p>
@@ -167,7 +169,9 @@ export function TriggerScrapeClient({
           {isAuthenticated ? (
             <section className="flex flex-col gap-4">
               <div>
-                <h2 className="text-lg font-semibold">Job configs</h2>
+                <h2 className="text-lg font-semibold text-zinc-900">
+                  Job configs
+                </h2>
                 <p className="text-sm text-zinc-600">
                   Search profiles to run this scrape against.
                 </p>
@@ -185,7 +189,9 @@ export function TriggerScrapeClient({
           ) : (
             <section className="flex flex-col gap-4">
               <div>
-                <h2 className="text-lg font-semibold">This search</h2>
+                <h2 className="text-lg font-semibold text-zinc-900">
+                  This search
+                </h2>
               </div>
               <AdHocSearchFields values={adHoc} onChange={setAdHoc} />
             </section>
@@ -193,7 +199,7 @@ export function TriggerScrapeClient({
 
           <section className="flex flex-col gap-4">
             <div>
-              <h2 className="text-lg font-semibold">Sites</h2>
+              <h2 className="text-lg font-semibold text-zinc-900">Sites</h2>
               <p className="text-sm text-zinc-600">
                 Sources to scrape in this run.
               </p>
@@ -211,7 +217,7 @@ export function TriggerScrapeClient({
 
           <section className="flex flex-col gap-4">
             <div>
-              <h2 className="text-lg font-semibold">Model</h2>
+              <h2 className="text-lg font-semibold text-zinc-900">Model</h2>
               <p className="text-sm text-zinc-600">
                 Which model classifies and de-duplicates listings for this run.
               </p>

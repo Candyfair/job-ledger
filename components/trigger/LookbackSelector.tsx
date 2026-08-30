@@ -72,7 +72,7 @@ export function LookbackSelector({
             onChange(e.target.value ? { since: e.target.value } : null)
           }
           aria-label="Since date"
-          className="w-fit rounded border border-zinc-300 px-3 py-2 text-sm"
+          className="w-fit rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
         />
       )}
     </div>

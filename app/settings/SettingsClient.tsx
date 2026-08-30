@@ -114,7 +114,7 @@ export function SettingsClient({
     <div className="flex flex-1 flex-col bg-zinc-50">
       <header className="border-b-4 border-black bg-zinc-100 px-6 py-6">
         <div className="mx-auto flex max-w-2xl items-baseline justify-between">
-          <h1 className="text-3xl font-bold">Settings</h1>
+          <h1 className="text-3xl font-bold text-zinc-900">Settings</h1>
           <Link
             href="/"
             className="text-xs font-medium tracking-wide text-blue-700 hover:underline"
@@ -133,7 +133,7 @@ export function SettingsClient({
 
         <section className="flex flex-col gap-4">
           <div>
-            <h2 className="text-lg font-semibold">Job configs</h2>
+            <h2 className="text-lg font-semibold text-zinc-900">Job configs</h2>
             <p className="text-sm text-zinc-600">
               Saved search profiles. Each one can be checked individually when
               you trigger a scrape.
@@ -154,7 +154,9 @@ export function SettingsClient({
               ) : (
                 <li key={config.id} className="flex flex-col gap-2 py-4">
                   <div className="flex items-start justify-between">
-                    <h3 className="font-medium">{config.title}</h3>
+                    <h3 className="font-medium text-zinc-900">
+                      {config.title}
+                    </h3>
                     <div className="flex gap-3 text-sm">
                       <button
                         type="button"
@@ -177,7 +179,7 @@ export function SettingsClient({
                       {config.keywords.map((keyword) => (
                         <span
                           key={keyword}
-                          className="rounded-full bg-zinc-200 px-2.5 py-0.5 text-xs"
+                          className="rounded-full bg-zinc-200 px-2.5 py-0.5 text-xs text-zinc-900"
                         >
                           {keyword}
                         </span>
@@ -212,7 +214,9 @@ export function SettingsClient({
         <section className="flex flex-col gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-semibold">Mots-clés exclus</h2>
+              <h2 className="text-lg font-semibold text-zinc-900">
+                Mots-clés exclus
+              </h2>
               <span className="rounded bg-black px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-white">
                 GLOBAL
               </span>
@@ -254,11 +258,11 @@ export function SettingsClient({
               onChange={(e) => setNewKeyword(e.target.value)}
               placeholder="ex. stage, junior"
               aria-label="Nouveau mot-clé exclu"
-              className="flex-1 rounded border border-zinc-300 px-3 py-2 text-sm"
+              className="flex-1 rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
             />
             <button
               type="submit"
-              className="rounded bg-zinc-300 px-4 py-2 text-sm font-medium"
+              className="rounded bg-zinc-300 px-4 py-2 text-sm font-medium text-zinc-900"
             >
               Add
             </button>

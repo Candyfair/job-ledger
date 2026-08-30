@@ -33,7 +33,9 @@ export function ModelChoice({
               className="mt-0.5 h-4 w-4"
             />
             <span className="flex flex-col gap-0.5">
-              <span className="text-sm font-medium">{option.label}</span>
+              <span className="text-sm font-medium text-zinc-900">
+                {option.label}
+              </span>
               <span className="text-sm text-zinc-600">
                 {option.description}
               </span>

@@ -64,7 +64,7 @@ export function JobConfigForm({
           onChange={(e) => setTitle(e.target.value)}
           placeholder="e.g. Senior Frontend Engineer"
           required
-          className="rounded border border-zinc-300 px-3 py-2 text-sm"
+          className="rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
         />
       </div>
 
@@ -80,7 +80,7 @@ export function JobConfigForm({
           value={keywordsInput}
           onChange={(e) => setKeywordsInput(e.target.value)}
           placeholder="e.g. React, TypeScript"
-          className="rounded border border-zinc-300 px-3 py-2 text-sm"
+          className="rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
         />
       </div>
 
@@ -96,7 +96,7 @@ export function JobConfigForm({
           value={location}
           onChange={(e) => setLocation(e.target.value)}
           placeholder="e.g. Paris or Remote"
-          className="rounded border border-zinc-300 px-3 py-2 text-sm"
+          className="rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
         />
       </div>
 
@@ -111,7 +111,7 @@ export function JobConfigForm({
         <button
           type="button"
           onClick={onCancel}
-          className="rounded border border-zinc-300 px-4 py-2 text-sm font-medium"
+          className="rounded border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-900"
         >
           Cancel
         </button>

@@ -52,7 +52,7 @@ export function CheckableList({
                   {item.badge}
                 </span>
               )}
-              <span className="text-sm">{item.label}</span>
+              <span className="text-sm text-zinc-900">{item.label}</span>
             </span>
             {item.subtitle && (
               <span className="text-sm text-zinc-600">{item.subtitle}</span>
