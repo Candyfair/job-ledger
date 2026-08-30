@@ -118,9 +118,35 @@ exhaustive coverage.
 
 ### API (Next.js ↔ Trigger.dev)
 
-To be detailed in the scaffolding session once the extraction schema is finalized. Expected shape:
+- `POST /api/scrape/trigger` — creates the `ScrapeRun` row, invokes the per-site Trigger.dev task(s), returns `runId`. Authoritative `ScrapeRun` creation lives here: the endpoint creates the row once and passes its id into each site task, which then only appends `Listing` rows and never touches the run's `status` (the endpoint rolls per-site outcomes up). A site task invoked **without** a run id — Trigger.dev's Test tab, the `scripts/test-scrape-*` harnesses — falls back to creating its own single-site `ScrapeRun`; that path is a testing convenience, not the production flow.
 
-- `POST /api/scrape/trigger` — body: `{ lookbackWindow, jobConfigIds[], sites[], model }` → creates the `ScrapeRun` row, invokes the per-site Trigger.dev task(s), returns `runId`. Authoritative `ScrapeRun` creation lives here: the endpoint creates the row once and passes its id into each site task, which then only appends `Listing` rows and never touches the run's `status` (the endpoint rolls per-site outcomes up). A site task invoked **without** a run id — Trigger.dev's Test tab, the `scripts/test-scrape-*` harnesses — falls back to creating its own single-site `ScrapeRun`; that path is a pre-Session-5 testing convenience, not the production flow.
+  Request body:
+
+  ```
+  {
+    lookbackWindow: '24h' | '3d' | { since: string }; // ISO 8601 date
+    sites: SiteId[];
+    model: string;              // only "claude_haiku" is accepted today —
+                                 // "deepseek_v4_flash" is reserved on the
+                                 // enum but has no adapter yet and is
+                                 // rejected with 400 (see CLAUDE.md decision #2)
+    jobConfigIds?: string[];    // authenticated users only
+    adHocSearch?: {             // anonymous users only, never persisted
+      title: string;
+      keywords: string[];
+      location?: string;
+    };
+  }
+  ```
+
+  Auth branching: a session present requires a non-empty `jobConfigIds` (400 otherwise) and ignores `adHocSearch` if present; no session requires `adHocSearch` (400 otherwise) and ignores `jobConfigIds` if present. `jobConfigIds` are scoped to the caller's own rows — ids that don't belong to the caller (or don't exist) are silently dropped rather than individually rejected; only a fully-empty resolution (none of the supplied ids belong to the caller) is a 400.
+
+  Rate limiting (see below) is checked before any write — a rejected request (429) never creates a `ScrapeRun`.
+
+  Fan-out: one Trigger.dev task per (site, resolved `JobConfig`) pair for authenticated requests — `sites.length × resolvedJobConfigIds.length` invocations, not one per site, since each `JobConfig` is its own search pass (§4). Anonymous requests get one task per site sharing the single `adHocSearch`. Task completion is never awaited — the endpoint returns `{ runId }` as soon as Trigger.dev acknowledges the enqueue.
+
+  Response: `{ runId: string }`, `201`.
+
 - `GET /api/scrape/status/:runId` — polled by the frontend for in-app status.
 - Trigger.dev task → writes directly to Postgres on completion (no callback to Next.js needed).
 
@@ -133,7 +159,7 @@ To be detailed in the scaffolding session once the extraction schema is finalize
 
 ### Non-functional
 
-- **Rate limiting**: per-IP counters in Postgres (no dedicated service — see DEPLOYMENT.md), enforced on the trigger endpoint.
+- **Rate limiting**: per-IP counters in Postgres (no dedicated service — see DEPLOYMENT.md), enforced on the trigger endpoint. Fixed one-hour window; threshold configurable via `TRIGGER_RATE_LIMIT_PER_HOUR` (default 5).
 - **Volume cap**: 50 listings maximum par run.
 - **Scraping politeness**: randomized inter-request delay between page fetches; limited per-site concurrency (each `scrape-<site>` Trigger.dev task pins `queue.concurrencyLimit: 1`, so runs against one site serialize while different sites still run in parallel); a stable mainstream desktop Chrome user-agent (not the literal Chromium default, whose headless build advertises `HeadlessChrome` — a bot signal on several of these boards; this is a plain request header, not stealth/fingerprint tooling, which §2 rules out).
 - **Security**: see DEPLOYMENT.md for the full mTLS + fail2ban setup.
