@@ -2,43 +2,11 @@ import Anthropic from "@anthropic-ai/sdk";
 import { ExtractedListingSchema, type ExtractedListing } from "./schema";
 import { EXTRACTION_SYSTEM_PROMPT, buildExtractionUserMessage } from "./prompt";
 import type { ExtractionAdapter } from "./adapter";
+import { EXTRACTION_JSON_SCHEMA } from "./json-schema";
 
 // Reads ANTHROPIC_API_KEY from env, same module-scope pattern as lib/db.ts's
 // pool/db client.
 const client = new Anthropic();
-
-const EXTRACTION_JSON_SCHEMA = {
-  type: "object",
-  properties: {
-    listings: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          listingId: { type: "string" },
-          title: { type: "string" },
-          company: { type: ["string", "null"] },
-          companyNormalized: { type: ["string", "null"] },
-          roleCanonical: { type: ["string", "null"] },
-          datePosted: { type: ["string", "null"] },
-          salaryRaw: { type: ["string", "null"] },
-        },
-        required: [
-          "listingId",
-          "title",
-          "company",
-          "companyNormalized",
-          "roleCanonical",
-          "datePosted",
-          "salaryRaw",
-        ],
-        additionalProperties: false,
-      },
-    },
-  },
-  required: ["listings"],
-  additionalProperties: false,
-} as const;
 
 /**
  * Claude Haiku implementation of {@link ExtractionAdapter}. Must return the

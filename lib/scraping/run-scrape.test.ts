@@ -24,10 +24,16 @@ vi.mock("@/lib/db", () => ({
   db: { select: vi.fn(), insert: vi.fn() },
 }));
 
-// Keeps the module-scope `new Anthropic()` in the real adapter from running
+// Keeps the module-scope `new Anthropic()` in the real adapters from running
 // at import time — every test injects its own adapter anyway.
 vi.mock("@/lib/extraction/claude-haiku", () => ({
   ClaudeHaikuAdapter: class {
+    extractListings = vi.fn(async () => []);
+  },
+}));
+
+vi.mock("@/lib/extraction/deepseek-v4-flash", () => ({
+  DeepSeekV4FlashAdapter: class {
     extractListings = vi.fn(async () => []);
   },
 }));
