@@ -8,7 +8,10 @@ import {
   scrapeRun,
 } from "@/drizzle/schema";
 import type { Site } from "@/lib/sites";
-import { ClaudeHaikuAdapter } from "@/lib/extraction/claude-haiku";
+import {
+  getExtractionAdapter,
+  type ModelUsed,
+} from "@/lib/extraction/adapter-registry";
 import type { ExtractionAdapter } from "@/lib/extraction/adapter";
 import { mergeListingsWithUrls } from "@/lib/extraction/merge-listings";
 import {
@@ -62,18 +65,27 @@ export type CaptureSitePage = (
  * invocation — the task creates its own single-site `ScrapeRun`.
  */
 export interface ScrapeSitePayload {
-  jobConfigId: string;
+  /** Persisted-row lookup path. Exactly one of `jobConfigId` /
+   * `adHocConfig` must be set — {@link runSiteScrape} throws otherwise. */
+  jobConfigId?: string;
+  /** Inline, never-persisted search params for an anonymous ad-hoc run
+   * (`/api/scrape/trigger`'s `adHocSearch` field) — there is no `JobConfig`
+   * row to look up, so this bypasses the DB lookup entirely. */
+  adHocConfig?: { keywords: string[]; location?: string | null };
   lookback: LookbackWindow;
   userId?: string | null;
   scrapeRunId?: string;
+  /** Defaults to `"claude_haiku"` when absent (Trigger.dev Test tab /
+   * standalone invocation) — see {@link getExtractionAdapter}. */
+  model?: ModelUsed;
 }
 
 interface RunSiteScrapeOptions {
   site: Site;
   capturePage: CaptureSitePage;
   payload: ScrapeSitePayload;
-  /** Defaults to a fresh {@link ClaudeHaikuAdapter}; injectable for the
-   * future DeepSeek adapter (Session 6) and for tests. */
+  /** Defaults to the adapter resolved from `payload.model` via
+   * {@link getExtractionAdapter}; injectable for tests. */
   extractionAdapter?: ExtractionAdapter;
 }
 
@@ -125,6 +137,21 @@ interface RunSiteScrapeResult {
  * nothing seeds it, so anonymous runs get no exclusions applied — intended
  * v1 behavior, not a gap.
  *
+ * Exactly one of `payload.jobConfigId` / `payload.adHocConfig` must be set —
+ * this is checked with an explicit runtime throw at the top of the
+ * function, not just enforced by the type, since `task()` payloads cross a
+ * JSON boundary with no schema validation (see the `since: Date` note
+ * below). `jobConfigId` looks up a persisted `JobConfig` row as before;
+ * `adHocConfig` (anonymous ad-hoc search, `/api/scrape/trigger`) skips that
+ * DB lookup entirely and uses its `keywords`/`location` directly, since an
+ * ad-hoc search is explicitly never persisted (SPEC.md §3) — there is no
+ * row to look up. `ScrapeRun.jobConfigsIncluded` is `[]` on the ad-hoc path.
+ *
+ * `payload.model` selects the extraction adapter via
+ * {@link getExtractionAdapter} and is written to `ScrapeRun.modelUsed`;
+ * omitted defaults to `"claude_haiku"` (Trigger.dev Test tab / standalone
+ * invocation, same testing-convenience pattern as `scrapeRunId`).
+ *
  * `payload.lookback.since` is coerced back to a real `Date` here: an
  * externally-triggered payload crosses a JSON serialization boundary and
  * `task()` does no schema validation, so `since` arrives as a string despite
@@ -140,24 +167,42 @@ export async function runSiteScrape({
   payload,
   extractionAdapter,
 }: RunSiteScrapeOptions): Promise<RunSiteScrapeResult> {
-  const [config] = await db
-    .select()
-    .from(jobConfig)
-    .where(eq(jobConfig.id, payload.jobConfigId));
-
-  if (!config) {
-    throw new Error(`JobConfig ${payload.jobConfigId} not found`);
+  if (!!payload.jobConfigId === !!payload.adHocConfig) {
+    throw new Error(
+      "runSiteScrape requires exactly one of payload.jobConfigId or payload.adHocConfig",
+    );
   }
 
-  const keywords = config.keywords.join(" ");
-  const location = config.location;
+  let keywords: string;
+  let location: string | null;
+  let resolvedJobConfigId: string | null = null;
+
+  if (payload.jobConfigId) {
+    const [config] = await db
+      .select()
+      .from(jobConfig)
+      .where(eq(jobConfig.id, payload.jobConfigId));
+
+    if (!config) {
+      throw new Error(`JobConfig ${payload.jobConfigId} not found`);
+    }
+
+    keywords = config.keywords.join(" ");
+    location = config.location;
+    resolvedJobConfigId = config.id;
+  } else {
+    keywords = payload.adHocConfig!.keywords.join(" ");
+    location = payload.adHocConfig!.location ?? null;
+  }
+
   const lookback: LookbackWindow =
     payload.lookback.type === "since_date"
       ? { type: "since_date", since: new Date(payload.lookback.since) }
       : payload.lookback;
   const lookbackSince = lookback.type === "since_date" ? lookback.since : null;
 
-  const adapter = extractionAdapter ?? new ClaudeHaikuAdapter();
+  const adapter =
+    extractionAdapter ?? getExtractionAdapter(payload.model ?? "claude_haiku");
 
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ userAgent: SCRAPER_USER_AGENT });
@@ -248,9 +293,9 @@ export async function runSiteScrape({
         userId: payload.userId ?? null,
         lookbackWindowType: lookback.type,
         lookbackSince,
-        modelUsed: "claude_haiku",
+        modelUsed: payload.model ?? "claude_haiku",
         sitesIncluded: [site],
-        jobConfigsIncluded: [payload.jobConfigId],
+        jobConfigsIncluded: resolvedJobConfigId ? [resolvedJobConfigId] : [],
         status,
       })
       .returning();

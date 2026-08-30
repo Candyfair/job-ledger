@@ -350,3 +350,120 @@ describe("runSiteScrape — exclusion-keyword tagging", () => {
     expect(db.select).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("runSiteScrape — jobConfigId / adHocConfig exclusivity", () => {
+  it("throws when both jobConfigId and adHocConfig are set", async () => {
+    await expect(
+      runSiteScrape({
+        site: "apec",
+        capturePage: onePageCapture,
+        payload: {
+          jobConfigId: "jc-1",
+          adHocConfig: { keywords: ["dev"] },
+          lookback: { type: "3d" },
+        },
+        extractionAdapter: adapterReturning([]),
+      }),
+    ).rejects.toThrow(
+      "runSiteScrape requires exactly one of payload.jobConfigId or payload.adHocConfig",
+    );
+  });
+
+  it("throws when neither jobConfigId nor adHocConfig is set", async () => {
+    await expect(
+      runSiteScrape({
+        site: "apec",
+        capturePage: onePageCapture,
+        payload: { lookback: { type: "3d" } },
+        extractionAdapter: adapterReturning([]),
+      }),
+    ).rejects.toThrow(
+      "runSiteScrape requires exactly one of payload.jobConfigId or payload.adHocConfig",
+    );
+  });
+});
+
+describe("runSiteScrape — anonymous ad-hoc search", () => {
+  it("uses adHocConfig directly, skipping the jobConfig lookup, and stores an empty jobConfigsIncluded", async () => {
+    // No jobConfig lookup on this path, so `db.select` is only ever called
+    // for the exclusionKeyword fetch — reset beforeEach's queue so the
+    // single call resolves to an empty exclusion list, not the CONFIG row.
+    vi.mocked(db.select).mockReset();
+    vi.mocked(db.select).mockReturnValue(mockDrizzleChain([]) as never);
+
+    const capturePage: CaptureSitePage = vi.fn(async (_page, params) => {
+      expect(params.keywords).toBe("react native");
+      expect(params.location).toBe("Lyon");
+      return { listings: [], hasMore: false };
+    });
+
+    const result = await runSiteScrape({
+      site: "apec",
+      capturePage,
+      payload: {
+        adHocConfig: { keywords: ["react", "native"], location: "Lyon" },
+        lookback: { type: "3d" },
+      },
+      extractionAdapter: adapterReturning([]),
+    });
+
+    expect(result.scrapeRunId).toBe("run-1");
+    expect(db.select).toHaveBeenCalledTimes(1);
+
+    const scrapeRunInsertCall = vi
+      .mocked(db.insert)
+      .mock.calls.find((call) => call[0] === scrapeRun);
+    expect(scrapeRunInsertCall).toBeDefined();
+  });
+});
+
+describe("runSiteScrape — model selection", () => {
+  it("defaults to claude_haiku on ScrapeRun.modelUsed when payload.model is omitted", async () => {
+    const insertChain = mockDrizzleChain([{ id: "run-1" }]);
+    vi.mocked(db.insert).mockReturnValue(insertChain as never);
+
+    await runSiteScrape({
+      site: "apec",
+      capturePage: onePageCapture,
+      payload: { jobConfigId: "jc-1", lookback: { type: "3d" } },
+      extractionAdapter: adapterReturning(oneExtractedEntry),
+    });
+
+    const scrapeRunValues = insertChain.values.mock.calls
+      .map((call) => call[0])
+      .find(
+        (arg): arg is { modelUsed: string } =>
+          !!arg && typeof arg === "object" && "modelUsed" in arg,
+      );
+    expect(scrapeRunValues?.modelUsed).toBe("claude_haiku");
+  });
+
+  it("writes payload.model to ScrapeRun.modelUsed when supplied", async () => {
+    const insertChain = mockDrizzleChain([{ id: "run-1" }]);
+    vi.mocked(db.insert).mockReturnValue(insertChain as never);
+
+    // Deliberately not "claude_haiku" (the default): with the same value as
+    // the default this test can't tell payload.model actually flowed through
+    // from hardcoding. extractionAdapter is injected here, so the
+    // getExtractionAdapter(...) not-implemented throw for deepseek_v4_flash
+    // is never reached — only ScrapeRun.modelUsed is under test.
+    await runSiteScrape({
+      site: "apec",
+      capturePage: onePageCapture,
+      payload: {
+        jobConfigId: "jc-1",
+        lookback: { type: "3d" },
+        model: "deepseek_v4_flash",
+      },
+      extractionAdapter: adapterReturning(oneExtractedEntry),
+    });
+
+    const scrapeRunValues = insertChain.values.mock.calls
+      .map((call) => call[0])
+      .find(
+        (arg): arg is { modelUsed: string } =>
+          !!arg && typeof arg === "object" && "modelUsed" in arg,
+      );
+    expect(scrapeRunValues?.modelUsed).toBe("deepseek_v4_flash");
+  });
+});
