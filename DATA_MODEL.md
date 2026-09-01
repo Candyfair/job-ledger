@@ -43,7 +43,7 @@ Global list, shared across all `JobConfig` rows for a given user (or global/anon
 
 One row per triggered run.
 
-- `id`, `userId` (nullable), `triggeredAt`, `lookbackWindow`, `modelUsed`, `sitesIncluded`, `jobConfigsIncluded`, `status`
+- `id`, `userId` (nullable), `triggeredAt`, `lookbackWindowType` (`24h` | `3d` | `since_date`), `lookbackSince` (nullable timestamp, set only when `lookbackWindowType` is `since_date`), `modelUsed`, `sitesIncluded`, `jobConfigsIncluded`, `status`
 
 ## `Listing`
 
