@@ -139,6 +139,13 @@ export function TriggerScrapeClient({
       </header>
 
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-10 px-6 py-8">
+        <p className="text-sm text-zinc-600">
+          Lancez un scraping pour voir apparaître les offres ici.{" "}
+          {isAuthenticated
+            ? "Vos recherches et résultats restent liés à votre compte."
+            : "Sans compte, vous recevrez un lien direct vers les résultats de votre recherche."}
+        </p>
+
         {error && (
           <p role="alert" className="text-sm text-red-600">
             {error}

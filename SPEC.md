@@ -23,8 +23,8 @@ Apec.fr and HelloWork. Apec's "partner sites" checkbox is deliberately left unch
 
 ### Trigger a scrape
 
-1. User (anonymous or authenticated) opens the trigger form.
-2. Form shows: lookback window selector (24h / 3 days / since a date), job configs (pre-checked, individually uncheckable), sites (pre-checked, individually uncheckable — same "hybrid" pattern as job configs, chosen for consistency across both axes), model choice (Haiku / DeepSeek). For anonymous visitors, who have no persisted JobConfig rows, the job-config section is replaced by a one-off free-text search (job title, keywords, location) entered ad hoc for that run only — not saved.
+1. User (anonymous or authenticated) opens the trigger form — directly, or redirected here from `/` when there is nothing to show: anonymous with no `?runId=` (or one that doesn't resolve), or authenticated with zero `ScrapeRun`s yet (§6).
+2. Form shows an unconditional intro reminder above it ("Lancez un scraping pour voir apparaître les offres ici." plus a second sentence that branches on auth state — anonymous: reminds them they'll get a direct results link with no account needed; authenticated: reminds them their searches/results stay tied to their account), then: lookback window selector (24h / 3 days / since a date), job configs (pre-checked, individually uncheckable), sites (pre-checked, individually uncheckable — same "hybrid" pattern as job configs, chosen for consistency across both axes), model choice (Haiku / DeepSeek). For anonymous visitors, who have no persisted JobConfig rows, the job-config section is replaced by a one-off free-text search (job title, keywords, location) entered ad hoc for that run only — not saved.
 3. On submit: rate-limit check (per-IP counter in Postgres) → if within limits, create a `ScrapeRun` and trigger the corresponding Trigger.dev task(s), one per included site.
 4. In-app status indicator shows progress (running / completed / partial failure). No email/push notification for v1 — deliberately deferred, see §9.
 
@@ -123,7 +123,7 @@ exhaustive coverage.
 
 - **Trigger form** (modal or dedicated page) — window, job configs, sites, model choice.
 - **Dashboard, authenticated** — run-history strip (own runs, newest first), listing table/cards for the selected run or "all time", exclusion toggle, duplicate grouping.
-- **Dashboard, anonymous** — single-run view via `?runId=`, no history strip, no aggregate; same listing table/cards, exclusion toggle, duplicate grouping, plus live status polling while the run is `running`. No `runId` (or one that doesn't resolve — nonexistent, or belongs to someone else, treated identically) shows an onboarding state linking to the trigger form instead.
+- **Dashboard, anonymous** — single-run view via `?runId=`, no history strip, no aggregate; same listing table/cards, exclusion toggle, duplicate grouping, plus live status polling while the run is `running`. No `runId` (or one that doesn't resolve — nonexistent, or belongs to someone else, treated identically so existence is never leaked) redirects to the trigger form instead of rendering anything at `/`. An authenticated user with zero `ScrapeRun`s redirects the same way — there is nothing to show until they trigger one.
 - **Settings page** — job config CRUD, exclusion keyword CRUD.
 - **Auth pages** — sign in / sign up (email+password, GitHub, Google).
 

@@ -46,12 +46,13 @@ type AnonymousRunProps = {
 type DashboardClientProps = AuthenticatedProps | AnonymousRunProps;
 
 /**
- * Top-level client component for both real dashboard view states
+ * Top-level client component for the two reachable dashboard view states
  * (authenticated with run-history strip, anonymous single-run via
- * `?runId=`) — the third state (anonymous, no `runId`) is `EmptyState` and
- * never reaches this component. Owns exclusion-mode/duplicate-expand UI
- * state (client-side only, resets on reload per SPEC.md §3), the "load
- * more" pagination for both runs and listings, and — anonymous mode only —
+ * `?runId=`) — every other case (no runs, no `runId`, or an unresolved
+ * `runId`) redirects to `/trigger-scrape` in `app/page.tsx` before this
+ * component ever renders. Owns exclusion-mode/duplicate-expand UI state
+ * (client-side only, resets on reload per SPEC.md §3), the "load more"
+ * pagination for both runs and listings, and — anonymous mode only —
  * status polling.
  */
 export function DashboardClient(props: DashboardClientProps) {
