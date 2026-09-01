@@ -134,6 +134,32 @@ describe("POST /api/scrape/trigger — anonymous", () => {
     );
   });
 
+  it("creates a ScrapeRun when adHocSearch.location is omitted (location is optional)", async () => {
+    vi.mocked(requireSession).mockResolvedValue(null);
+    vi.mocked(db.insert).mockReturnValue(
+      mockDrizzleChain([{ id: "run-4" }]) as never,
+    );
+
+    const res = await POST(
+      triggerRequest({
+        lookbackWindow: "3d",
+        sites: ["apec"],
+        model: "claude_haiku",
+        adHocSearch: { title: "Dev", keywords: ["react"] },
+      }),
+    );
+    const body = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(body).toEqual({ runId: "run-4" });
+    expect(tasks.trigger).toHaveBeenCalledWith(
+      "scrape-apec",
+      expect.objectContaining({
+        adHocConfig: { title: "Dev", keywords: ["react"], location: null },
+      }),
+    );
+  });
+
   it("returns 400 when adHocSearch is missing", async () => {
     vi.mocked(requireSession).mockResolvedValue(null);
 
