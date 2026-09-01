@@ -50,6 +50,13 @@
       "when": 1788093856704,
       "tag": "0006_flippant_swarm",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788285252815,
+      "tag": "0007_wakeful_speed_demon",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,10 @@
-import { pgTable, text, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+  type AnyPgColumn,
+} from "drizzle-orm/pg-core";
 import { scrapeRun } from "./scrape-run";
 import { siteEnum } from "./enums";
 
@@ -32,4 +38,11 @@ export const listing = pgTable("listing", {
   duplicateOfListingId: uuid("duplicate_of_listing_id").references(
     (): AnyPgColumn => listing.id,
   ),
+  // Added for the dashboard's "Last write … N rows stored" footer
+  // (design/dashboard.jpeg) — ScrapeRun.triggeredAt is run-level, not
+  // per-row, so it can't answer "when was this specific listing written."
+  // Backfilled rows (pre-migration) get the migration's execution time, not
+  // their real scrape time — an accepted approximation, not a data source
+  // of truth for historical analysis.
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });

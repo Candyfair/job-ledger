@@ -9,6 +9,8 @@ Living document. Update it whenever a design decision changes — this is the so
 
 Auth is scoped to persisting user config only — it never gates triggering a scrape or choosing a model. Fallback plan if cost abuse is ever detected on the public demo: default everyone to the cheapest model and add an auth requirement to trigger at all. Not implemented unless/until needed.
 
+**Dashboard access is scoped the same way** (decided in Session 6, the dashboard's build session): an anonymous visitor reaches the dashboard only via the specific `?runId=` link returned right after triggering a scrape — a single-run view, with no history strip and no "all time" aggregate, since there is nothing to aggregate across for a visitor with no persisted `ScrapeRun` ownership. An authenticated user gets the full run-history strip (their own `ScrapeRun`s only) plus an "all time" listings view scoped to those same runs. See §3 and §6.
+
 ## §2. Sites in Scope
 
 Apec.fr and HelloWork. Apec's "partner sites" checkbox is deliberately left unchecked (overlaps with HelloWork, low relevance otherwise).
@@ -34,9 +36,19 @@ Apec.fr and HelloWork. Apec's "partner sites" checkbox is deliberately left unch
 
 ### View dashboard & toggle exclusions
 
-1. Dashboard lists `Listing` rows for the selected run(s) (or "all time").
-2. Listings matching an exclusion keyword (title only — body text is out of scope for v1) are folded by default (collapsed, with a per-listing "reveal" link showing which keyword(s) matched). A global three-state control switches between Folded (default), Revealed (all excluded listings expanded), and Hidden (excluded listings removed from view entirely).
-3. Duplicate listings are grouped/flagged, not deleted.
+1. Dashboard lists `Listing` rows for the selected run (anonymous, via `?runId=`), a selected run from the user's own history (authenticated), or "all time" across the user's own runs (authenticated, no run selected). See §1 for the authenticated-vs-anonymous split.
+2. Listings matching an exclusion keyword (title only — body text is out of scope for v1) are folded by default (collapsed, with a per-listing "reveal" link showing which keyword(s) matched). A global three-state control switches between Folded (default), Revealed (all excluded listings expanded), and Hidden (excluded listings removed from view entirely). Exact semantics (decided in Session 6, since the wording above was ambiguous about counts and the per-listing control):
+
+   | Mode             | Excluded row visibility                                                           | Per-listing "reveal"                                                                  | Counts toward the toolbar's "N excluded"                                 |
+   | ---------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+   | Folded (default) | Collapsed line: struck-through title/company + matched keyword(s), always visible | Present — expands just that row to the full column/card layout (still struck through) | Yes                                                                      |
+   | Revealed         | Every excluded listing already shown at the full expanded layout                  | Not shown — nothing left for it to do                                                 | Yes                                                                      |
+   | Hidden           | Not rendered at all                                                               | N/A                                                                                   | No — the summary describes what's currently shown, not a permanent total |
+
+   This state is client-side UI only, never persisted (not even for authenticated users), and resets to Folded on reload.
+
+3. Duplicate listings are grouped/flagged, not deleted. A duplicate group expands inline under its primary listing (no navigation).
+4. Run-history strip (authenticated only) is clickable per entry to filter the listings below to that run; no entry selected shows the "all time" aggregate. The anonymous single-run view polls `GET /api/scrape/status/:runId` (§7) every 4 seconds while that run's status is `running`, and stops once it resolves — 4s is a deliberate midpoint of a 3–5s target, not load-bearing precision.
 
 ## §4. Scraping & Extraction Pipeline
 
@@ -110,7 +122,8 @@ exhaustive coverage.
 ## §6. Screens
 
 - **Trigger form** (modal or dedicated page) — window, job configs, sites, model choice.
-- **Dashboard** — listing table/cards, exclusion toggle, duplicate grouping, run status.
+- **Dashboard, authenticated** — run-history strip (own runs, newest first), listing table/cards for the selected run or "all time", exclusion toggle, duplicate grouping.
+- **Dashboard, anonymous** — single-run view via `?runId=`, no history strip, no aggregate; same listing table/cards, exclusion toggle, duplicate grouping, plus live status polling while the run is `running`. No `runId` (or one that doesn't resolve — nonexistent, or belongs to someone else, treated identically) shows an onboarding state linking to the trigger form instead.
 - **Settings page** — job config CRUD, exclusion keyword CRUD.
 - **Auth pages** — sign in / sign up (email+password, GitHub, Google).
 
@@ -152,7 +165,33 @@ exhaustive coverage.
 
   Response: `{ runId: string }`, `201`.
 
-- `GET /api/scrape/status/:runId` — polled by the frontend for in-app status.
+- `GET /api/scrape/status/:runId` — polled by the frontend for in-app status (Session 6). Ownership: an anonymous caller only sees `userId IS NULL` runs; an authenticated caller additionally sees their own runs — never a foreign authenticated user's run, and the two failure modes (nonexistent vs. not-yours) are indistinguishable (404 either way) so existence is never leaked.
+
+  Response:
+
+  ```
+  {
+    runId: string;
+    status: "running" | "completed" | "partial_failure";
+    statusBasis: "derived";   // see the note below — not a stored fact
+    triggeredAt: string;      // ISO 8601
+    model: string;
+    sites: {
+      site: SiteId; label: string; code: string;
+      status: "pending" | "completed" | "failed";
+      failureCause: "markup_broken" | "bot_challenge" | null;
+      listingCount: number;
+    }[];
+    kept: number;
+    excluded: number;
+    duplicateGroups: number;
+  }
+  ```
+
+  **`statusBasis: "derived"` is load-bearing, not decorative.** No code path anywhere writes `ScrapeRun.status` past its `"running"` default — see the existing kill-switch note below, which already anticipated this gap. This endpoint instead computes status live from `Listing` rows + the global `SiteStatus` table (`lib/dashboard/derive-run-status.ts`), with the same known blind spots documented there.
+
+- `GET /api/scrape/runs` — authenticated-only, cursor-paginated "load more" for the dashboard's run-history strip (Session 6). 401 without a session.
+- `GET /api/listings` — cursor-paginated "load more" for the dashboard's listings (Session 6). `?runId=` scopes to one run (ownership-checked identically to the status endpoint above); omitting it scopes to the caller's own "all time" aggregate (401 without a session in that case).
 - Trigger.dev task → writes directly to Postgres on completion (no callback to Next.js needed).
 
 **API (Settings — JobConfig & ExclusionKeyword CRUD, authenticated only)**
@@ -196,5 +235,6 @@ Concrete cases to cover once each piece is built (see CLAUDE.md's Testing sectio
 
 - Notification-on-completion — explicitly deferred to a possible v2, not v1.
 - UI translation debt: auth pages and settings page (built in Session 2) are currently in English, contradicting the Session 1 French decision. Needs a dedicated pass — not scheduled yet, not in scope for Session 3.
-- Kill-switch visibility on shared runs: when a task is skipped by the kill switch on the shared fan-out path (`scrapeRunId` supplied), the skip is only visible in Trigger.dev task logs, not in `ScrapeRun.status` or the dashboard — no rollup mechanism yet reconciles per-site outcomes into a run's final status (`GET /api/scrape/status/:runId`, §7, is spec'd but not built). When that rollup is designed, it should treat a kill-switch skip as one input among several — the same way `markup_broken`/`bot_challenge` already are via `SiteStatus` — rather than writing directly to the shared `ScrapeRun` row.
+- Kill-switch visibility on shared runs: when a task is skipped by the kill switch on the shared fan-out path (`scrapeRunId` supplied), the skip is only visible in Trigger.dev task logs, not in `ScrapeRun.status` or the dashboard — no rollup mechanism yet reconciles per-site outcomes into a run's final status. `GET /api/scrape/status/:runId` (§7) is now built (Session 6), but as a live-derived heuristic (`lib/dashboard/derive-run-status.ts`), not a real rollup writer — the underlying gap this bullet describes is still open, just worked around rather than solved. Known consequences of the derived approach: (1) a kill-switch skip still isn't visible anywhere this heuristic reads from; (2) a page whose LLM extraction came back empty with no Playwright error and no `SiteStatus` flip is a real `partial_failure` per §4/§5, but that signal is only recorded in-memory on the single-site standalone scrape path — the production multi-site fan-out path this heuristic reads from has nothing persisted for it, so such a run reads as "completed"; (3) `SiteStatus` being a global singleton per site (not per-run) means attributing a failure to "this run" via a timestamp comparison can misattribute between two runs targeting the same site close together in time. When a real rollup is designed — e.g. `POST /api/scrape/trigger` awaiting per-site completion and writing `ScrapeRun.status` exactly once — it should treat a kill-switch skip as one input among several, the same way `markup_broken`/`bot_challenge` already are via `SiteStatus`, rather than writing directly to the shared `ScrapeRun` row. Deliberately out of scope for Session 6 (the dashboard build) since it touches the Tier-1 `/trigger` fan-out and the "never awaited" completion contract documented on `POST /api/scrape/trigger` itself.
+- Duplicate detection is not implemented: `lib/dedup/` (referenced by DATA_MODEL.md's `Listing.duplicateOfListingId`) was scoped to Session 5, never implemented — the dashboard's duplicate-group UI (Session 6) was built against the column via fixtures only, detection logic remains a dedicated open item.
 - Dark mode: `app/globals.css`'s `@media (prefers-color-scheme: dark)` block and its `--background`/`--foreground` CSS variables are deliberate scaffolding for a real dark mode in v2 — not implemented yet. Every page currently sets an explicit light-mode Tailwind background (`bg-white`, `bg-zinc-50`, etc.) that never responds to that media query, so all text on every page now also carries an explicit light-mode color class (`text-zinc-900` and friends) rather than inheriting `var(--foreground)` — otherwise OS dark mode flips text to a light color against those same light backgrounds and makes it unreadable. When v2 dark mode is actually built, both the backgrounds and these explicit text colors need `dark:` variants added together, not just the variables re-enabled.

@@ -49,7 +49,7 @@ One row per triggered run.
 
 One row per scraped job posting, raw + normalized.
 
-- `id`, `scrapeRunId`, `site`, `title` (`NOT NULL`), `company` (nullable), `companyNormalized` (nullable), `roleCanonical` (nullable), `datePosted` (nullable), `salaryRaw` (nullable), `url` (`NOT NULL` — Playwright-captured, never LLM-produced, see SPEC.md §4), `excludedByKeyword` (computed/cached — array of matched keyword strings, e.g. `["PHP", "Senior"]`; empty/null when not excluded), `duplicateOfListingId` (nullable, self-reference)
+- `id`, `scrapeRunId`, `site`, `title` (`NOT NULL`), `company` (nullable), `companyNormalized` (nullable), `roleCanonical` (nullable), `datePosted` (nullable), `salaryRaw` (nullable), `url` (`NOT NULL` — Playwright-captured, never LLM-produced, see SPEC.md §4), `excludedByKeyword` (computed/cached — array of matched keyword strings, e.g. `["PHP", "Senior"]`; empty/null when not excluded), `duplicateOfListingId` (nullable, self-reference), `createdAt` (`timestamp`, default `now()` — added in Session 6 for the dashboard's "last write" footer; `ScrapeRun.triggeredAt` is run-level and can't answer "when was this specific row written")
 
 ## `RateLimitCounter`
 
