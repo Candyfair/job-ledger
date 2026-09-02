@@ -16,7 +16,7 @@ describe("buildHelloworkSearchUrl", () => {
   it("sets the keyword param", () => {
     const url = parse(
       buildHelloworkSearchUrl({
-        keywords: "développeur react",
+        searchTerm: "développeur react",
         lookback: LOOKBACK,
         page: 0,
       }),
@@ -31,7 +31,7 @@ describe("buildHelloworkSearchUrl", () => {
     expect(
       parse(
         buildHelloworkSearchUrl({
-          keywords: "dev",
+          searchTerm: "dev",
           lookback: LOOKBACK,
           page: 0,
         }),
@@ -41,7 +41,7 @@ describe("buildHelloworkSearchUrl", () => {
     expect(
       parse(
         buildHelloworkSearchUrl({
-          keywords: "dev",
+          searchTerm: "dev",
           location: "Paris 75001",
           lookback: LOOKBACK,
           page: 0,
@@ -54,7 +54,7 @@ describe("buildHelloworkSearchUrl", () => {
     expect(
       parse(
         buildHelloworkSearchUrl({
-          keywords: "dev",
+          searchTerm: "dev",
           lookback: LOOKBACK,
           page: 0,
         }),
@@ -64,7 +64,7 @@ describe("buildHelloworkSearchUrl", () => {
     expect(
       parse(
         buildHelloworkSearchUrl({
-          keywords: "dev",
+          searchTerm: "dev",
           lookback: LOOKBACK,
           page: 3,
         }),
@@ -74,7 +74,11 @@ describe("buildHelloworkSearchUrl", () => {
 
   it("pins the fixed search-filter params (st / ray / msa)", () => {
     const url = parse(
-      buildHelloworkSearchUrl({ keywords: "dev", lookback: LOOKBACK, page: 0 }),
+      buildHelloworkSearchUrl({
+        searchTerm: "dev",
+        lookback: LOOKBACK,
+        page: 0,
+      }),
     );
     expect(url.searchParams.get("st")).toBe("relevance");
     expect(url.searchParams.get("ray")).toBe("20");
@@ -86,7 +90,7 @@ describe("buildHelloworkSearchUrl", () => {
   describe("d — date/lookback filter", () => {
     function d(lookback: LookbackWindow) {
       return parse(
-        buildHelloworkSearchUrl({ keywords: "dev", lookback, page: 0 }),
+        buildHelloworkSearchUrl({ searchTerm: "dev", lookback, page: 0 }),
       ).searchParams.get("d");
     }
 

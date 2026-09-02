@@ -399,7 +399,7 @@ describe("runSiteScrape — anonymous ad-hoc search", () => {
     vi.mocked(db.select).mockReturnValue(mockDrizzleChain([]) as never);
 
     const capturePage: CaptureSitePage = vi.fn(async (_page, params) => {
-      expect(params.keywords).toBe("Frontend Engineer react native");
+      expect(params.searchTerm).toBe("Frontend Engineer react native");
       expect(params.location).toBe("Lyon");
       return { listings: [], hasMore: false };
     });

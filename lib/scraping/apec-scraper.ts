@@ -97,7 +97,7 @@ async function waitForResultsToRender(page: Page): Promise<void> {
 export async function captureApecPage(
   page: Page,
   params: {
-    keywords: string;
+    searchTerm: string;
     location?: string | null;
     lookback: LookbackWindow;
     page: number;

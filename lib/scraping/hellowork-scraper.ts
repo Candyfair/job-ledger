@@ -120,7 +120,7 @@ async function readResultCount(page: Page): Promise<number | null> {
 export async function captureHelloworkPage(
   page: Page,
   params: {
-    keywords: string;
+    searchTerm: string;
     location?: string | null;
     lookback: LookbackWindow;
     page: number; // 0-indexed (runner convention)

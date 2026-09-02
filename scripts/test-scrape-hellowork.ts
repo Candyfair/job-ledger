@@ -22,7 +22,7 @@ import { ScrapeBlockedError, ScrapeMarkupError } from "@/lib/scraping/errors";
 
 // Hardcoded search params for local iteration — no JobConfig, no trigger form.
 const SEARCH = {
-  keywords: "développeur",
+  searchTerm: "développeur",
   location: "Paris",
   lookback: { type: "3d" } as LookbackWindow,
 };
@@ -49,7 +49,7 @@ async function main() {
       const { listings: captured, hasMore: more } = await captureHelloworkPage(
         page,
         {
-          keywords: SEARCH.keywords,
+          searchTerm: SEARCH.searchTerm,
           location: SEARCH.location,
           lookback: SEARCH.lookback,
           page: pageNum,

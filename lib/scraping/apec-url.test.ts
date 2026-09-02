@@ -12,7 +12,7 @@ describe("buildApecSearchUrl", () => {
   it("sets the keyword param", () => {
     const url = parse(
       buildApecSearchUrl({
-        keywords: "développeur react",
+        searchTerm: "développeur react",
         lookback: LOOKBACK,
         page: 0,
       }),
@@ -26,14 +26,14 @@ describe("buildApecSearchUrl", () => {
   it("includes the location only when provided", () => {
     expect(
       parse(
-        buildApecSearchUrl({ keywords: "dev", lookback: LOOKBACK, page: 0 }),
+        buildApecSearchUrl({ searchTerm: "dev", lookback: LOOKBACK, page: 0 }),
       ).searchParams.has("lieux"),
     ).toBe(false);
 
     expect(
       parse(
         buildApecSearchUrl({
-          keywords: "dev",
+          searchTerm: "dev",
           location: "Paris",
           lookback: LOOKBACK,
           page: 0,
@@ -45,20 +45,20 @@ describe("buildApecSearchUrl", () => {
   it("omits page for page 0 and sets it (0-indexed) from page 1 on", () => {
     expect(
       parse(
-        buildApecSearchUrl({ keywords: "dev", lookback: LOOKBACK, page: 0 }),
+        buildApecSearchUrl({ searchTerm: "dev", lookback: LOOKBACK, page: 0 }),
       ).searchParams.has("page"),
     ).toBe(false);
 
     expect(
       parse(
-        buildApecSearchUrl({ keywords: "dev", lookback: LOOKBACK, page: 3 }),
+        buildApecSearchUrl({ searchTerm: "dev", lookback: LOOKBACK, page: 3 }),
       ).searchParams.get("page"),
     ).toBe("3");
   });
 
   it("pins the four typesConvention params that exclude partner-site listings (SPEC §2)", () => {
     const url = parse(
-      buildApecSearchUrl({ keywords: "dev", lookback: LOOKBACK, page: 0 }),
+      buildApecSearchUrl({ searchTerm: "dev", lookback: LOOKBACK, page: 0 }),
     );
     expect(url.searchParams.getAll("typesConvention")).toEqual([
       "143684",
@@ -70,12 +70,12 @@ describe("buildApecSearchUrl", () => {
 
   it("ignores the lookback window (no Apec query param for it)", () => {
     const a = buildApecSearchUrl({
-      keywords: "dev",
+      searchTerm: "dev",
       lookback: { type: "24h" },
       page: 0,
     });
     const b = buildApecSearchUrl({
-      keywords: "dev",
+      searchTerm: "dev",
       lookback: { type: "since_date", since: new Date("2026-01-01") },
       page: 0,
     });

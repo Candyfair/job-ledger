@@ -49,7 +49,7 @@ export interface CapturedSiteListing {
 export type CaptureSitePage = (
   page: Page,
   params: {
-    keywords: string;
+    searchTerm: string;
     location?: string | null;
     lookback: LookbackWindow;
     page: number;
@@ -269,7 +269,7 @@ export async function runSiteScrape({
     );
   }
 
-  let keywords: string;
+  let searchTerm: string;
   let location: string | null;
   let resolvedJobConfigId: string | null = null;
 
@@ -283,11 +283,11 @@ export async function runSiteScrape({
       throw new Error(`JobConfig ${payload.jobConfigId} not found`);
     }
 
-    keywords = config.keywords.join(" ");
+    searchTerm = config.keywords.join(" ");
     location = config.location;
     resolvedJobConfigId = config.id;
   } else {
-    keywords = [payload.adHocConfig!.title, ...payload.adHocConfig!.keywords]
+    searchTerm = [payload.adHocConfig!.title, ...payload.adHocConfig!.keywords]
       .join(" ")
       .trim();
     location = payload.adHocConfig!.location ?? null;
@@ -318,7 +318,7 @@ export async function runSiteScrape({
       }
 
       const { listings: captured, hasMore: more } = await capturePage(page, {
-        keywords,
+        searchTerm,
         location,
         lookback,
         page: pageNum,

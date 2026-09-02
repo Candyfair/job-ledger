@@ -79,13 +79,13 @@ function helloworkDateFilter(lookback: LookbackWindow): string {
  * free text.
  */
 export function buildHelloworkSearchUrl(params: {
-  keywords: string;
+  searchTerm: string;
   location?: string | null;
   lookback: LookbackWindow;
   page: number; // 0-indexed (runner convention)
 }): string {
   const url = new URL(RESULTS_PATH);
-  url.searchParams.set("k", params.keywords);
+  url.searchParams.set("k", params.searchTerm);
   if (params.location) {
     url.searchParams.set("l", params.location);
   }

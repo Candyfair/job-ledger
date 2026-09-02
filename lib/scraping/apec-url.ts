@@ -34,7 +34,7 @@ const OWN_OFFERS_TYPES_CONVENTION = ["143684", "143685", "143686", "143687"];
  * {@link OWN_OFFERS_TYPES_CONVENTION}.
  */
 export function buildApecSearchUrl(params: {
-  keywords: string;
+  searchTerm: string;
   location?: string | null;
   lookback: LookbackWindow;
   page: number; // 0-indexed
@@ -42,7 +42,7 @@ export function buildApecSearchUrl(params: {
   const url = new URL(
     "https://www.apec.fr/candidat/recherche-emploi.html/emploi",
   );
-  url.searchParams.set("motsCles", params.keywords);
+  url.searchParams.set("motsCles", params.searchTerm);
   if (params.location) {
     url.searchParams.set("lieux", params.location);
   }
