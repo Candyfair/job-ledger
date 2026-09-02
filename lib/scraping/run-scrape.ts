@@ -1,12 +1,7 @@
 import { chromium, type Page } from "playwright";
-import { eq, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import {
-  exclusionKeyword,
-  jobConfig,
-  listing,
-  scrapeRun,
-} from "@/drizzle/schema";
+import { jobConfig, listing, scrapeRun } from "@/drizzle/schema";
 import type { Site } from "@/lib/sites";
 import {
   getExtractionAdapter,
@@ -71,12 +66,15 @@ export interface ScrapeSitePayload {
   jobConfigId?: string;
   /** Inline, never-persisted search params for an anonymous ad-hoc run
    * (`/api/scrape/trigger`'s `adHocSearch` field) — there is no `JobConfig`
-   * row to look up, so this bypasses the DB lookup entirely. `title` is
-   * folded into the search string alongside `keywords` (see
-   * {@link runSiteScrape}) rather than stored separately — an ad-hoc search
-   * has no persisted row to hang a display-only label off of, unlike
-   * `JobConfig.title`. */
-  adHocConfig?: { title: string; keywords: string[]; location?: string | null };
+   * row to look up, so this bypasses the DB lookup entirely. `title` is the
+   * literal site-search term (same role as `JobConfig.title`);
+   * `excludedKeywords` are the per-run exclusion keywords fed to
+   * {@link matchExclusionKeywords}, and may be empty. */
+  adHocConfig?: {
+    title: string;
+    excludedKeywords: string[];
+    location?: string | null;
+  };
   lookback: LookbackWindow;
   userId?: string | null;
   scrapeRunId?: string;
@@ -214,30 +212,26 @@ async function recordKillSwitchSkip(
  *   collected.
  *
  * `Listing.excludedByKeyword` is computed here, at write time, rather than
- * lazily at read time: the `ExclusionKeyword` list for `payload.userId` is
- * fetched once per run (not once per listing) and each collected listing's
- * title is checked against it via {@link matchExclusionKeywords} right
+ * lazily at read time: the resolved exclusion-keyword list (per-`JobConfig`
+ * `excludedKeywords` on the persisted path, per-run
+ * `adHocConfig.excludedKeywords` on the anonymous path) is checked against
+ * each collected listing's title via {@link matchExclusionKeywords} right
  * before the bulk insert, so every inserted row always carries an array
- * (never `null`) — empty when nothing matched. Anonymous runs
- * (`payload.userId` absent) look up the global list (`userId IS NULL`)
- * instead of a specific user's list; today that list is always empty since
- * nothing seeds it, so anonymous runs get no exclusions applied — intended
- * v1 behavior, not a gap.
+ * (never `null`) — empty when nothing matched, and also empty when the
+ * config / ad-hoc search supplied no exclusion keywords at all.
  *
  * Exactly one of `payload.jobConfigId` / `payload.adHocConfig` must be set —
  * this is checked with an explicit runtime throw at the top of the
  * function, not just enforced by the type, since `task()` payloads cross a
  * JSON boundary with no schema validation (see the `since: Date` note
- * below). `jobConfigId` looks up a persisted `JobConfig` row as before;
- * `adHocConfig` (anonymous ad-hoc search, `/api/scrape/trigger`) skips that
- * DB lookup entirely and uses its `title`/`keywords`/`location` directly,
- * since an ad-hoc search is explicitly never persisted (SPEC.md §3) — there
- * is no row to look up. Unlike the `JobConfig` path (where `title` is only
- * ever a display label — `config.keywords` alone drives the search string),
- * `adHocConfig.title` is folded into the search string here: an ad-hoc
- * search has no separate label field for it to be, so dropping it would
- * silently discard a value the caller was required to provide.
- * `ScrapeRun.jobConfigsIncluded` is `[]` on the ad-hoc path.
+ * below). `jobConfigId` looks up a persisted `JobConfig` row; `adHocConfig`
+ * (anonymous ad-hoc search, `/api/scrape/trigger`) skips that DB lookup
+ * entirely and uses its `title`/`excludedKeywords`/`location` directly,
+ * since an ad-hoc search is explicitly never persisted (SPEC.md §3). On
+ * both paths `title` is the literal site-search term (Apec `motsCles`,
+ * HelloWork `k`) and is always non-empty (required / validated non-blank),
+ * so no empty-query guard is needed. `ScrapeRun.jobConfigsIncluded` is `[]`
+ * on the ad-hoc path.
  *
  * `payload.model` selects the extraction adapter via
  * {@link getExtractionAdapter} and is written to `ScrapeRun.modelUsed`;
@@ -270,6 +264,7 @@ export async function runSiteScrape({
   }
 
   let searchTerm: string;
+  let excludedKeywords: string[];
   let location: string | null;
   let resolvedJobConfigId: string | null = null;
 
@@ -283,13 +278,13 @@ export async function runSiteScrape({
       throw new Error(`JobConfig ${payload.jobConfigId} not found`);
     }
 
-    searchTerm = config.keywords.join(" ");
+    searchTerm = config.title;
+    excludedKeywords = config.excludedKeywords;
     location = config.location;
     resolvedJobConfigId = config.id;
   } else {
-    searchTerm = [payload.adHocConfig!.title, ...payload.adHocConfig!.keywords]
-      .join(" ")
-      .trim();
+    searchTerm = payload.adHocConfig!.title;
+    excludedKeywords = payload.adHocConfig!.excludedKeywords;
     location = payload.adHocConfig!.location ?? null;
   }
 
@@ -368,16 +363,6 @@ export async function runSiteScrape({
 
   await browser.close();
 
-  const exclusionRows = await db
-    .select()
-    .from(exclusionKeyword)
-    .where(
-      payload.userId
-        ? eq(exclusionKeyword.userId, payload.userId)
-        : isNull(exclusionKeyword.userId),
-    );
-  const exclusionKeywords = exclusionRows.map((row) => row.keyword);
-
   let scrapeRunId: string;
   let status: RunSiteScrapeResult["status"] = null;
 
@@ -412,10 +397,7 @@ export async function runSiteScrape({
         datePosted: item.datePosted,
         salaryRaw: item.salaryRaw,
         url: item.url,
-        excludedByKeyword: matchExclusionKeywords(
-          item.title,
-          exclusionKeywords,
-        ),
+        excludedByKeyword: matchExclusionKeywords(item.title, excludedKeywords),
       })),
     );
   }

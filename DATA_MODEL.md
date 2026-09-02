@@ -19,8 +19,8 @@ One row per configured job search.
 
 - `id` (`uuid`, `gen_random_uuid()`)
 - `userId` (`text`, nullable — anonymous runs don't create one; FK → `user.id`, `onDelete: cascade`)
-- `title` (e.g. "React front-end")
-- `keywords` (e.g. `["React"]`, or `["React Native", "mobile"]` — this defines a _search pass_; "React" and "React Native/mobile" are two separate `JobConfig` rows, not one combined search, since combining keywords dilutes results on most of these sites' search UIs)
+- `title` (e.g. "React front-end") — both the human-readable label **and** the literal search term sent to each site's search (Apec `motsCles`, HelloWork `k`). One search intent per row; two related searches ("React" vs "React Native") are two rows, since combining terms dilutes results on these sites' search UIs.
+- `excludedKeywords` (`text[]`, `NOT NULL DEFAULT '{}'`, e.g. `["fullstack", "senior"]`) — per-config exclusion keywords. A scraped listing whose title matches any of them (whole-word, case/diacritic-insensitive, alias-folded — see SPEC.md §5) is tagged `Listing.excludedByKeyword` at write time. Optional; `[]` excludes nothing. **Per config, not a global account list** — the boards can't express "search X but not Y", so this is where that lives.
 - `location` (geographic zone — **per config, not global**, so the tool stays generic for other installers with different searches; nullable)
 - `createdAt`
 

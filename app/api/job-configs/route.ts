@@ -22,8 +22,9 @@ export async function GET() {
 
 /**
  * Creates a job config owned by the caller. Requires a session (401
- * otherwise); 400 if `title` is missing/blank, `keywords` isn't a string
- * array, or `location` is present but not a string.
+ * otherwise); 400 if `title` is missing/blank, `excludedKeywords` is present
+ * but not a string array, or `location` is present but not a string.
+ * `excludedKeywords` is optional and defaults to `[]` (exclude nothing).
  */
 export async function POST(request: Request) {
   const session = await requireSession();
@@ -32,14 +33,18 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json();
-  const { title, keywords, location } = body ?? {};
+  const { title, excludedKeywords, location } = body ?? {};
 
   if (typeof title !== "string" || title.trim() === "") {
     return NextResponse.json({ error: "title is required" }, { status: 400 });
   }
-  if (!Array.isArray(keywords) || keywords.some((k) => typeof k !== "string")) {
+  if (
+    excludedKeywords !== undefined &&
+    (!Array.isArray(excludedKeywords) ||
+      excludedKeywords.some((k) => typeof k !== "string"))
+  ) {
     return NextResponse.json(
-      { error: "keywords must be an array of strings" },
+      { error: "excludedKeywords must be an array of strings" },
       { status: 400 },
     );
   }
@@ -59,7 +64,7 @@ export async function POST(request: Request) {
     .values({
       userId: session.user.id,
       title: title.trim(),
-      keywords,
+      excludedKeywords: excludedKeywords ?? [],
       location: location ?? null,
     })
     .returning();

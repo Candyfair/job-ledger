@@ -1,27 +1,22 @@
 "use client";
 
-import { inputToKeywords } from "@/components/settings/JobConfigForm";
-
 export type AdHocSearchValues = {
   title: string;
-  keywordsInput: string;
+  excludedKeywordsInput: string;
   location: string;
 };
 
 export const EMPTY_AD_HOC_SEARCH: AdHocSearchValues = {
   title: "",
-  keywordsInput: "",
+  excludedKeywordsInput: "",
   location: "",
 };
 
-/** `POST /api/scrape/trigger` requires both a non-empty `title` and a
- * non-empty `keywords` array for `adHocSearch` (`route.ts`'s validation) —
- * `location` is the only optional field. */
+/** `POST /api/scrape/trigger` requires only a non-empty `title` for
+ * `adHocSearch` (`route.ts`'s validation); `excludedKeywords` and `location`
+ * are both optional. */
 export function isAdHocSearchValid(values: AdHocSearchValues): boolean {
-  return (
-    values.title.trim() !== "" &&
-    inputToKeywords(values.keywordsInput).length > 0
-  );
+  return values.title.trim() !== "";
 }
 
 /** Anonymous-variant replacement for the Job configs section
@@ -60,18 +55,18 @@ export function AdHocSearchFields({
 
       <div className="flex flex-col gap-1">
         <label
-          htmlFor="ad-hoc-keywords"
+          htmlFor="ad-hoc-excluded-keywords"
           className="text-xs font-medium tracking-wide text-zinc-600"
         >
-          KEYWORDS
+          EXCLUDED KEYWORDS
         </label>
         <input
-          id="ad-hoc-keywords"
-          value={values.keywordsInput}
+          id="ad-hoc-excluded-keywords"
+          value={values.excludedKeywordsInput}
           onChange={(e) =>
-            onChange({ ...values, keywordsInput: e.target.value })
+            onChange({ ...values, excludedKeywordsInput: e.target.value })
           }
-          placeholder="e.g. React, TypeScript"
+          placeholder="e.g. stage, senior, PHP"
           className="rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
         />
       </div>

@@ -22,7 +22,7 @@ import { inputToKeywords } from "@/components/settings/JobConfigForm";
 type JobConfig = {
   id: string;
   title: string;
-  keywords: string[];
+  excludedKeywords: string[];
   location: string | null;
 };
 
@@ -98,7 +98,7 @@ export function TriggerScrapeClient({
             model,
             adHocSearch: {
               title: adHoc.title.trim(),
-              keywords: inputToKeywords(adHoc.keywordsInput),
+              excludedKeywords: inputToKeywords(adHoc.excludedKeywordsInput),
               location: adHoc.location.trim() || undefined,
             },
           };

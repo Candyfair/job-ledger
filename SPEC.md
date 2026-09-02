@@ -24,14 +24,14 @@ Apec.fr and HelloWork. Apec's "partner sites" checkbox is deliberately left unch
 ### Trigger a scrape
 
 1. User (anonymous or authenticated) opens the trigger form — directly, or redirected here from `/` when there is nothing to show: anonymous with no `?runId=` (or one that doesn't resolve), or authenticated with zero `ScrapeRun`s yet (§6).
-2. Form shows an unconditional intro reminder above it ("Lancez un scraping pour voir apparaître les offres ici." plus a second sentence that branches on auth state — anonymous: reminds them they'll get a direct results link with no account needed; authenticated: reminds them their searches/results stay tied to their account), then: lookback window selector (24h / 3 days / since a date), job configs (pre-checked, individually uncheckable), sites (pre-checked, individually uncheckable — same "hybrid" pattern as job configs, chosen for consistency across both axes), model choice (Haiku / DeepSeek). For anonymous visitors, who have no persisted JobConfig rows, the job-config section is replaced by a one-off free-text search (job title, keywords, location) entered ad hoc for that run only — not saved.
+2. Form shows an unconditional intro reminder above it ("Lancez un scraping pour voir apparaître les offres ici." plus a second sentence that branches on auth state — anonymous: reminds them they'll get a direct results link with no account needed; authenticated: reminds them their searches/results stay tied to their account), then: lookback window selector (24h / 3 days / since a date), job configs (pre-checked, individually uncheckable), sites (pre-checked, individually uncheckable — same "hybrid" pattern as job configs, chosen for consistency across both axes), model choice (Haiku / DeepSeek). For anonymous visitors, who have no persisted JobConfig rows, the job-config section is replaced by a one-off free-text search entered ad hoc for that run only — not saved: a job title (the search term, required), excluded keywords (optional), and a location (optional).
 3. On submit: rate-limit check (per-IP counter in Postgres) → if within limits, create a `ScrapeRun` and trigger the corresponding Trigger.dev task(s), one per included site.
 4. In-app status indicator shows progress (running / completed / partial failure). No email/push notification for v1 — deliberately deferred, see §9.
 
 ### Configure job postings & exclusions (authenticated only)
 
 1. Settings page, separate from the dashboard — keeps the dashboard focused on consumption, not editing.
-2. CRUD for `JobConfig` (title, keywords, location).
+2. CRUD for `JobConfig` (title, excluded keywords, location).
 3. CRUD for the global `ExclusionKeyword` list.
 
 ### View dashboard & toggle exclusions
@@ -54,7 +54,7 @@ Apec.fr and HelloWork. Apec's "partner sites" checkbox is deliberately left unch
 
 Per included site, per included `JobConfig`:
 
-1. Playwright task navigates to the site's search results for that config's keywords + location, within the lookback window. Navigation/pagination is 100% deterministic code — see CLAUDE.md decision #1.
+1. Playwright task navigates to the site's search results for that config's title (used verbatim as the search term) + location, within the lookback window. The config's `excludedKeywords` are **not** part of the query — they're applied after extraction (§5). Navigation/pagination is 100% deterministic code — see CLAUDE.md decision #1.
 2. Random delay between page loads; limited concurrency per site (politeness — reduces block risk on sites with no formal API).
 3. Raw page/listing content is captured.
 4. Content is sent to the configured LLM adapter (Claude Haiku or DeepSeek V4 Flash — both wired behind one interface per CLAUDE.md decision #2) with a fixed extraction prompt/schema, returning structured JSON: title, company, date, salary, URL, plus a **normalized company name** and **canonical role signature** used for dedup (§5). See DATA_MODEL.md for the `Listing` shape these fields land in.
@@ -74,8 +74,11 @@ Per included site, per included `JobConfig`:
 
 Both of the following are deterministic code, never an LLM judgment call — the LLM's job stops at producing the normalized fields consumed here (CLAUDE.md decision #1):
 
-- **Exclusion filtering**: a listing's title is checked against the global
-  `ExclusionKeyword` list using whole-word matching, case-insensitive and
+- **Exclusion filtering**: a listing's title is checked against the exclusion
+  keywords for the search that produced it — `JobConfig.excludedKeywords` for
+  an authenticated run, `adHocSearch.excludedKeywords` for an anonymous one
+  (both may be empty, in which case nothing is flagged) — using whole-word
+  matching, case-insensitive and
   diacritic-insensitive (accents stripped before comparison). The title is
   tokenized on whitespace and punctuation, except that `- / + # . _` are
   treated as internal token characters (not separators) so compound tech
@@ -150,14 +153,14 @@ exhaustive coverage.
                                  // decision #2)
     jobConfigIds?: string[];    // authenticated users only
     adHocSearch?: {             // anonymous users only, never persisted
-      title: string;
-      keywords: string[];
+      title: string;            // the search term (required, non-blank)
+      excludedKeywords?: string[];  // optional; defaults to []
       location?: string;
     };
   }
   ```
 
-  Auth branching: a session present requires a non-empty `jobConfigIds` (400 otherwise) and ignores `adHocSearch` if present; no session requires `adHocSearch` (400 otherwise) and ignores `jobConfigIds` if present. `jobConfigIds` are scoped to the caller's own rows — ids that don't belong to the caller (or don't exist) are silently dropped rather than individually rejected; only a fully-empty resolution (none of the supplied ids belong to the caller) is a 400.
+  Auth branching: a session present requires a non-empty `jobConfigIds` (400 otherwise) and ignores `adHocSearch` if present; no session requires `adHocSearch` with a non-blank `title` (400 otherwise — `excludedKeywords` and `location` are optional) and ignores `jobConfigIds` if present. `jobConfigIds` are scoped to the caller's own rows — ids that don't belong to the caller (or don't exist) are silently dropped rather than individually rejected; only a fully-empty resolution (none of the supplied ids belong to the caller) is a 400.
 
   Rate limiting (see below) is checked before any write — a rejected request (429) never creates a `ScrapeRun`.
 

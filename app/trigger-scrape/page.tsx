@@ -28,7 +28,7 @@ export default async function TriggerScrapePage() {
       initialJobConfigs={jobConfigs.map((c) => ({
         id: c.id,
         title: c.title,
-        keywords: c.keywords,
+        excludedKeywords: c.excludedKeywords,
         location: c.location,
       }))}
     />

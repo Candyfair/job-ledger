@@ -6,7 +6,7 @@ const initialJobConfigs = [
   {
     id: "jc-1",
     title: "Backend / Python & Go",
-    keywords: ["Python", "Go"],
+    excludedKeywords: ["Python", "Go"],
     location: "Anywhere",
   },
 ];
@@ -37,7 +37,7 @@ describe("SettingsClient", () => {
     const created = {
       id: "jc-2",
       title: "Frontend",
-      keywords: ["React"],
+      excludedKeywords: ["React"],
       location: null,
     };
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(created, 201));
@@ -53,7 +53,7 @@ describe("SettingsClient", () => {
     fireEvent.change(screen.getByLabelText("JOB TITLE"), {
       target: { value: "Frontend" },
     });
-    fireEvent.change(screen.getByLabelText("KEYWORDS"), {
+    fireEvent.change(screen.getByLabelText("EXCLUDED KEYWORDS"), {
       target: { value: "React" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));

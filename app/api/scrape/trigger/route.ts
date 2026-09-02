@@ -142,7 +142,7 @@ export async function POST(request: Request) {
   let resolvedJobConfigIds: string[] = [];
   let adHocConfig: {
     title: string;
-    keywords: string[];
+    excludedKeywords: string[];
     location?: string | null;
   } | null = null;
 
@@ -181,9 +181,11 @@ export async function POST(request: Request) {
       !adHocSearch ||
       typeof adHocSearch.title !== "string" ||
       adHocSearch.title.trim() === "" ||
-      !Array.isArray(adHocSearch.keywords) ||
-      adHocSearch.keywords.length === 0 ||
-      adHocSearch.keywords.some((k: unknown) => typeof k !== "string") ||
+      (adHocSearch.excludedKeywords !== undefined &&
+        (!Array.isArray(adHocSearch.excludedKeywords) ||
+          adHocSearch.excludedKeywords.some(
+            (k: unknown) => typeof k !== "string",
+          ))) ||
       (adHocSearch.location !== undefined &&
         typeof adHocSearch.location !== "string")
     ) {
@@ -195,7 +197,7 @@ export async function POST(request: Request) {
 
     adHocConfig = {
       title: adHocSearch.title.trim(),
-      keywords: adHocSearch.keywords,
+      excludedKeywords: adHocSearch.excludedKeywords ?? [],
       location: adHocSearch.location ?? null,
     };
   }

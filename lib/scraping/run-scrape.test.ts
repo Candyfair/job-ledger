@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { isNull } from "drizzle-orm";
 import { chromium } from "playwright";
 import { db } from "@/lib/db";
-import { scrapeRun, listing, exclusionKeyword } from "@/drizzle/schema";
+import { scrapeRun, listing } from "@/drizzle/schema";
 import { mockDrizzleChain } from "@/lib/test/mock-db";
 import { markSiteFailed } from "./site-status";
 import { ScrapeBlockedError, ScrapeMarkupError } from "./errors";
@@ -40,7 +39,12 @@ vi.mock("@/lib/extraction/deepseek-v4-flash", () => ({
 
 vi.mock("./site-status", () => ({ markSiteFailed: vi.fn() }));
 
-const CONFIG = { id: "jc-1", keywords: ["dev"], location: "Paris" };
+const CONFIG = {
+  id: "jc-1",
+  title: "Dev",
+  excludedKeywords: [] as string[],
+  location: "Paris",
+};
 const today = new Date().toISOString().slice(0, 10);
 
 function adapterReturning(
@@ -68,12 +72,10 @@ const oneExtractedEntry = [
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // First `db.select()` call is the `jobConfig` lookup; every subsequent
-  // call (the `exclusionKeyword` fetch) defaults to an empty list so
-  // pre-existing tests that don't care about exclusions see no keywords.
-  vi.mocked(db.select)
-    .mockReturnValueOnce(mockDrizzleChain([CONFIG]) as never)
-    .mockReturnValue(mockDrizzleChain([]) as never);
+  // The only `db.select()` call `runSiteScrape` makes is the `jobConfig`
+  // lookup on the `jobConfigId` path. Exclusion keywords now travel on the
+  // resolved config / ad-hoc payload — there is no separate list fetch.
+  vi.mocked(db.select).mockReturnValue(mockDrizzleChain([CONFIG]) as never);
   vi.mocked(db.insert).mockReturnValue(
     mockDrizzleChain([{ id: "run-1" }]) as never,
   );
@@ -251,11 +253,11 @@ describe("runSiteScrape — VOLUME_CAP enforcement (SPEC.md §7)", () => {
 });
 
 describe("runSiteScrape — exclusion-keyword tagging", () => {
-  it("tags a listing whose title matches a configured keyword, preserving casing", async () => {
+  it("tags a listing whose title matches a config excluded keyword, preserving casing", async () => {
     const insertChain = mockDrizzleChain([{ id: "run-1" }]);
     vi.mocked(db.insert).mockReturnValue(insertChain as never);
-    vi.mocked(db.select).mockReturnValueOnce(
-      mockDrizzleChain([{ keyword: "PHP" }]) as never,
+    vi.mocked(db.select).mockReturnValue(
+      mockDrizzleChain([{ ...CONFIG, excludedKeywords: ["PHP"] }]) as never,
     );
 
     const entries = [{ ...oneExtractedEntry[0], title: "Développeur PHP" }];
@@ -278,8 +280,8 @@ describe("runSiteScrape — exclusion-keyword tagging", () => {
   it("gives a non-matching listing an empty excludedByKeyword array", async () => {
     const insertChain = mockDrizzleChain([{ id: "run-1" }]);
     vi.mocked(db.insert).mockReturnValue(insertChain as never);
-    vi.mocked(db.select).mockReturnValueOnce(
-      mockDrizzleChain([{ keyword: "Manager" }]) as never,
+    vi.mocked(db.select).mockReturnValue(
+      mockDrizzleChain([{ ...CONFIG, excludedKeywords: ["Manager"] }]) as never,
     );
 
     await runSiteScrape({
@@ -297,39 +299,39 @@ describe("runSiteScrape — exclusion-keyword tagging", () => {
     expect(insertedRows?.[0].excludedByKeyword).toEqual([]);
   });
 
-  it("scopes the exclusion-keyword query to userId IS NULL when payload.userId is omitted", async () => {
-    // `beforeEach` already queues one return value for `db.select`; reset
-    // here so this test's two calls (jobConfig, then exclusionKeyword) are
-    // fully controlled and nothing leaks into the next test.
-    const exclusionSelectChain = mockDrizzleChain([]);
-    vi.mocked(db.select).mockReset();
-    vi.mocked(db.select)
-      .mockReturnValueOnce(mockDrizzleChain([CONFIG]) as never)
-      .mockReturnValueOnce(exclusionSelectChain as never);
+  it("applies the ad-hoc run's own excludedKeywords on the anonymous path", async () => {
+    const insertChain = mockDrizzleChain([{ id: "run-1" }]);
+    vi.mocked(db.insert).mockReturnValue(insertChain as never);
+
+    const entries = [{ ...oneExtractedEntry[0], title: "Développeur PHP" }];
 
     await runSiteScrape({
       site: "apec",
       capturePage: onePageCapture,
-      // userId intentionally omitted — anonymous run.
-      payload: { jobConfigId: "jc-1", lookback: { type: "3d" } },
-      extractionAdapter: adapterReturning(oneExtractedEntry),
+      payload: {
+        adHocConfig: { title: "Dev", excludedKeywords: ["PHP"] },
+        lookback: { type: "3d" },
+      },
+      extractionAdapter: adapterReturning(entries),
     });
 
-    const fromChain = exclusionSelectChain.from.mock.results[0]
-      .value as ReturnType<typeof mockDrizzleChain>;
-    const whereArg = fromChain.where.mock.calls[0][0];
-    expect(whereArg).toEqual(isNull(exclusionKeyword.userId));
+    // No jobConfig lookup and no separate exclusion-list fetch on this path.
+    expect(db.select).not.toHaveBeenCalled();
+
+    const insertedRows = insertChain.values.mock.calls
+      .map((call) => call[0])
+      .find((arg): arg is { title: string; excludedByKeyword: string[] }[] =>
+        Array.isArray(arg),
+      );
+    expect(insertedRows?.[0].excludedByKeyword).toEqual(["PHP"]);
   });
 
-  it("fetches the exclusion-keyword list exactly once per call, not once per listing", async () => {
+  it("looks the jobConfig up exactly once per call, not once per listing", async () => {
     const insertChain = mockDrizzleChain([{ id: "run-1" }]);
     vi.mocked(db.insert).mockReturnValue(insertChain as never);
-    // Reset for the same reason as the test above — full control over both
-    // of this test's `db.select` calls.
-    vi.mocked(db.select).mockReset();
-    vi.mocked(db.select)
-      .mockReturnValueOnce(mockDrizzleChain([CONFIG]) as never)
-      .mockReturnValueOnce(mockDrizzleChain([{ keyword: "PHP" }]) as never);
+    vi.mocked(db.select).mockReturnValue(
+      mockDrizzleChain([{ ...CONFIG, excludedKeywords: ["PHP"] }]) as never,
+    );
 
     const captured = [
       { listingId: "l0_0", url: "https://apec.fr/1", rawText: "raw" },
@@ -352,9 +354,7 @@ describe("runSiteScrape — exclusion-keyword tagging", () => {
       extractionAdapter: adapterReturning(entries),
     });
 
-    // One call for the `jobConfig` lookup, one for the `exclusionKeyword`
-    // fetch — never one per collected listing.
-    expect(db.select).toHaveBeenCalledTimes(2);
+    expect(db.select).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -366,7 +366,7 @@ describe("runSiteScrape — jobConfigId / adHocConfig exclusivity", () => {
         capturePage: onePageCapture,
         payload: {
           jobConfigId: "jc-1",
-          adHocConfig: { title: "Dev", keywords: ["dev"] },
+          adHocConfig: { title: "Dev", excludedKeywords: [] },
           lookback: { type: "3d" },
         },
         extractionAdapter: adapterReturning([]),
@@ -392,14 +392,10 @@ describe("runSiteScrape — jobConfigId / adHocConfig exclusivity", () => {
 
 describe("runSiteScrape — anonymous ad-hoc search", () => {
   it("uses adHocConfig directly, skipping the jobConfig lookup, and stores an empty jobConfigsIncluded", async () => {
-    // No jobConfig lookup on this path, so `db.select` is only ever called
-    // for the exclusionKeyword fetch — reset beforeEach's queue so the
-    // single call resolves to an empty exclusion list, not the CONFIG row.
-    vi.mocked(db.select).mockReset();
-    vi.mocked(db.select).mockReturnValue(mockDrizzleChain([]) as never);
-
     const capturePage: CaptureSitePage = vi.fn(async (_page, params) => {
-      expect(params.searchTerm).toBe("Frontend Engineer react native");
+      // Search term is the ad-hoc title alone — excluded keywords never
+      // enter the query string.
+      expect(params.searchTerm).toBe("Frontend Engineer");
       expect(params.location).toBe("Lyon");
       return { listings: [], hasMore: false };
     });
@@ -410,7 +406,7 @@ describe("runSiteScrape — anonymous ad-hoc search", () => {
       payload: {
         adHocConfig: {
           title: "Frontend Engineer",
-          keywords: ["react", "native"],
+          excludedKeywords: ["react", "native"],
           location: "Lyon",
         },
         lookback: { type: "3d" },
@@ -419,7 +415,7 @@ describe("runSiteScrape — anonymous ad-hoc search", () => {
     });
 
     expect(result.scrapeRunId).toBe("run-1");
-    expect(db.select).toHaveBeenCalledTimes(1);
+    expect(db.select).not.toHaveBeenCalled();
 
     const scrapeRunInsertCall = vi
       .mocked(db.insert)

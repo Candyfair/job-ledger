@@ -6,10 +6,10 @@ const initialJobConfigs = [
   {
     id: "jc-1",
     title: "Senior Frontend",
-    keywords: ["React"],
+    excludedKeywords: ["React"],
     location: "Paris",
   },
-  { id: "jc-2", title: "Backend", keywords: ["Go"], location: null },
+  { id: "jc-2", title: "Backend", excludedKeywords: ["Go"], location: null },
 ];
 
 function jsonResponse(body: unknown, status = 201) {
@@ -82,7 +82,7 @@ describe("TriggerScrapeClient — authenticated", () => {
 });
 
 describe("TriggerScrapeClient — anonymous", () => {
-  it("renders the ad-hoc search fields instead of job configs, disabled until title and keywords are filled", async () => {
+  it("renders the ad-hoc search fields instead of job configs, enabled once the title alone is filled", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ runId: "run-2" }));
 
     render(
@@ -96,12 +96,12 @@ describe("TriggerScrapeClient — anonymous", () => {
     fireEvent.change(screen.getByLabelText("JOB TITLE"), {
       target: { value: "Senior Frontend Engineer" },
     });
-    expect(submitButton()).toBeDisabled();
-
-    fireEvent.change(screen.getByLabelText("KEYWORDS"), {
-      target: { value: "React, TypeScript" },
-    });
+    // Title alone is enough — excluded keywords are optional.
     expect(submitButton()).toBeEnabled();
+
+    fireEvent.change(screen.getByLabelText("EXCLUDED KEYWORDS"), {
+      target: { value: "fullstack, lead" },
+    });
 
     fireEvent.click(submitButton());
 
@@ -113,7 +113,7 @@ describe("TriggerScrapeClient — anonymous", () => {
     const body = JSON.parse(init!.body as string);
     expect(body.adHocSearch).toEqual({
       title: "Senior Frontend Engineer",
-      keywords: ["React", "TypeScript"],
+      excludedKeywords: ["fullstack", "lead"],
       location: undefined,
     });
     expect(body.jobConfigIds).toBeUndefined();
@@ -133,9 +133,6 @@ describe("TriggerScrapeClient — anonymous", () => {
 
     fireEvent.change(screen.getByLabelText("JOB TITLE"), {
       target: { value: "Dev" },
-    });
-    fireEvent.change(screen.getByLabelText("KEYWORDS"), {
-      target: { value: "react" },
     });
     fireEvent.click(submitButton());
 

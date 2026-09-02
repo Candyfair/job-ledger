@@ -4,7 +4,7 @@ import { useState } from "react";
 
 export type JobConfigFormValues = {
   title: string;
-  keywords: string[];
+  excludedKeywords: string[];
   location: string | null;
 };
 
@@ -14,7 +14,7 @@ function keywordsToInput(keywords: string[]) {
 
 /** Comma-separated free text → trimmed, non-empty keyword array. Also used
  * by `components/trigger/AdHocSearchFields.tsx` for the anonymous trigger
- * form's Keywords field, which maps to the same shape. */
+ * form's Excluded keywords field, which maps to the same shape. */
 export function inputToKeywords(input: string) {
   return input
     .split(",")
@@ -34,8 +34,8 @@ export function JobConfigForm({
   saving?: boolean;
 }) {
   const [title, setTitle] = useState(initial?.title ?? "");
-  const [keywordsInput, setKeywordsInput] = useState(
-    initial ? keywordsToInput(initial.keywords) : "",
+  const [excludedKeywordsInput, setExcludedKeywordsInput] = useState(
+    initial ? keywordsToInput(initial.excludedKeywords) : "",
   );
   const [location, setLocation] = useState(initial?.location ?? "");
 
@@ -46,7 +46,7 @@ export function JobConfigForm({
         e.preventDefault();
         onSave({
           title: title.trim(),
-          keywords: inputToKeywords(keywordsInput),
+          excludedKeywords: inputToKeywords(excludedKeywordsInput),
           location: location.trim() === "" ? null : location.trim(),
         });
       }}
@@ -70,16 +70,16 @@ export function JobConfigForm({
 
       <div className="flex flex-col gap-1">
         <label
-          htmlFor="job-config-keywords"
+          htmlFor="job-config-excluded-keywords"
           className="text-xs font-medium tracking-wide text-zinc-600"
         >
-          KEYWORDS
+          EXCLUDED KEYWORDS
         </label>
         <input
-          id="job-config-keywords"
-          value={keywordsInput}
-          onChange={(e) => setKeywordsInput(e.target.value)}
-          placeholder="e.g. React, TypeScript"
+          id="job-config-excluded-keywords"
+          value={excludedKeywordsInput}
+          onChange={(e) => setExcludedKeywordsInput(e.target.value)}
+          placeholder="e.g. stage, senior, PHP"
           className="rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
         />
       </div>

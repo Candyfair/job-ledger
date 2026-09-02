@@ -10,7 +10,7 @@ import {
 type JobConfig = {
   id: string;
   title: string;
-  keywords: string[];
+  excludedKeywords: string[];
   location: string | null;
 };
 
@@ -174,12 +174,15 @@ export function SettingsClient({
                       </button>
                     </div>
                   </div>
-                  {config.keywords.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {config.keywords.map((keyword) => (
+                  {config.excludedKeywords.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-medium tracking-wide text-zinc-500">
+                        Excludes:
+                      </span>
+                      {config.excludedKeywords.map((keyword) => (
                         <span
                           key={keyword}
-                          className="rounded-full bg-zinc-200 px-2.5 py-0.5 text-xs text-zinc-900"
+                          className="rounded-full bg-red-50 px-2.5 py-0.5 text-xs text-red-800"
                         >
                           {keyword}
                         </span>

@@ -77,7 +77,7 @@ describe("POST /api/scrape/trigger — authenticated", () => {
         lookbackWindow: "24h",
         sites: ["apec"],
         model: "claude_haiku",
-        adHocSearch: { title: "Dev", keywords: ["react"] },
+        adHocSearch: { title: "Dev", excludedKeywords: ["react"] },
       }),
     );
 
@@ -116,7 +116,11 @@ describe("POST /api/scrape/trigger — anonymous", () => {
         lookbackWindow: "3d",
         sites: ["apec"],
         model: "claude_haiku",
-        adHocSearch: { title: "Dev", keywords: ["react"], location: "Lyon" },
+        adHocSearch: {
+          title: "Dev",
+          excludedKeywords: ["react"],
+          location: "Lyon",
+        },
         jobConfigIds: ["jc-1"],
       }),
     );
@@ -129,7 +133,11 @@ describe("POST /api/scrape/trigger — anonymous", () => {
     expect(tasks.trigger).toHaveBeenCalledWith(
       "scrape-apec",
       expect.objectContaining({
-        adHocConfig: { title: "Dev", keywords: ["react"], location: "Lyon" },
+        adHocConfig: {
+          title: "Dev",
+          excludedKeywords: ["react"],
+          location: "Lyon",
+        },
       }),
     );
   });
@@ -145,7 +153,7 @@ describe("POST /api/scrape/trigger — anonymous", () => {
         lookbackWindow: "3d",
         sites: ["apec"],
         model: "claude_haiku",
-        adHocSearch: { title: "Dev", keywords: ["react"] },
+        adHocSearch: { title: "Dev", excludedKeywords: ["react"] },
       }),
     );
     const body = await res.json();
@@ -155,7 +163,35 @@ describe("POST /api/scrape/trigger — anonymous", () => {
     expect(tasks.trigger).toHaveBeenCalledWith(
       "scrape-apec",
       expect.objectContaining({
-        adHocConfig: { title: "Dev", keywords: ["react"], location: null },
+        adHocConfig: {
+          title: "Dev",
+          excludedKeywords: ["react"],
+          location: null,
+        },
+      }),
+    );
+  });
+
+  it("creates a ScrapeRun when adHocSearch has only a title (excludedKeywords is optional)", async () => {
+    vi.mocked(requireSession).mockResolvedValue(null);
+    vi.mocked(db.insert).mockReturnValue(
+      mockDrizzleChain([{ id: "run-5" }]) as never,
+    );
+
+    const res = await POST(
+      triggerRequest({
+        lookbackWindow: "3d",
+        sites: ["apec"],
+        model: "claude_haiku",
+        adHocSearch: { title: "Dev" },
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    expect(tasks.trigger).toHaveBeenCalledWith(
+      "scrape-apec",
+      expect.objectContaining({
+        adHocConfig: { title: "Dev", excludedKeywords: [], location: null },
       }),
     );
   });

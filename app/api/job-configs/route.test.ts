@@ -35,7 +35,12 @@ describe("GET /api/job-configs", () => {
   it("returns the signed-in user's job configs", async () => {
     vi.mocked(requireSession).mockResolvedValue(session as never);
     const rows = [
-      { id: "jc-1", title: "Backend", keywords: ["Go"], location: null },
+      {
+        id: "jc-1",
+        title: "Backend",
+        excludedKeywords: ["Go"],
+        location: null,
+      },
     ];
     vi.mocked(db.select).mockReturnValue(mockDrizzleChain(rows) as never);
 
@@ -54,7 +59,7 @@ describe("POST /api/job-configs", () => {
     const res = await POST(
       new Request("http://localhost/api/job-configs", {
         method: "POST",
-        body: JSON.stringify({ title: "x", keywords: [] }),
+        body: JSON.stringify({ title: "x", excludedKeywords: [] }),
       }),
     );
 
@@ -67,7 +72,20 @@ describe("POST /api/job-configs", () => {
     const res = await POST(
       new Request("http://localhost/api/job-configs", {
         method: "POST",
-        body: JSON.stringify({ keywords: [] }),
+        body: JSON.stringify({ excludedKeywords: [] }),
+      }),
+    );
+
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects excludedKeywords that isn't a string array", async () => {
+    vi.mocked(requireSession).mockResolvedValue(session as never);
+
+    const res = await POST(
+      new Request("http://localhost/api/job-configs", {
+        method: "POST",
+        body: JSON.stringify({ title: "Backend", excludedKeywords: [1, 2] }),
       }),
     );
 
@@ -80,7 +98,7 @@ describe("POST /api/job-configs", () => {
       id: "jc-1",
       userId: "user-1",
       title: "Backend",
-      keywords: ["Go"],
+      excludedKeywords: ["Go"],
       location: null,
     };
     vi.mocked(db.insert).mockReturnValue(mockDrizzleChain([created]) as never);
@@ -88,12 +106,38 @@ describe("POST /api/job-configs", () => {
     const res = await POST(
       new Request("http://localhost/api/job-configs", {
         method: "POST",
-        body: JSON.stringify({ title: "Backend", keywords: ["Go"] }),
+        body: JSON.stringify({ title: "Backend", excludedKeywords: ["Go"] }),
       }),
     );
     const body = await res.json();
 
     expect(res.status).toBe(201);
     expect(body).toEqual(created);
+  });
+
+  it("creates a job config when excludedKeywords is omitted (defaults to [])", async () => {
+    vi.mocked(requireSession).mockResolvedValue(session as never);
+    const created = {
+      id: "jc-2",
+      userId: "user-1",
+      title: "Backend",
+      excludedKeywords: [],
+      location: null,
+    };
+    const insertChain = mockDrizzleChain([created]);
+    vi.mocked(db.insert).mockReturnValue(insertChain as never);
+
+    const res = await POST(
+      new Request("http://localhost/api/job-configs", {
+        method: "POST",
+        body: JSON.stringify({ title: "Backend" }),
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    const valuesArg = insertChain.values.mock.calls[0][0] as {
+      excludedKeywords: string[];
+    };
+    expect(valuesArg.excludedKeywords).toEqual([]);
   });
 });

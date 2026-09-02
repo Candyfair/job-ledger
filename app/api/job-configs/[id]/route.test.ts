@@ -62,7 +62,7 @@ describe("PATCH /api/job-configs/:id", () => {
       id: "jc-1",
       userId: "user-1",
       title: "New title",
-      keywords: ["Go"],
+      excludedKeywords: ["Go"],
       location: null,
     };
     vi.mocked(db.update).mockReturnValue(mockDrizzleChain([updated]) as never);
@@ -78,6 +78,47 @@ describe("PATCH /api/job-configs/:id", () => {
 
     expect(res.status).toBe(200);
     expect(body).toEqual(updated);
+  });
+
+  it("updates excludedKeywords when supplied, leaving other fields untouched", async () => {
+    vi.mocked(requireSession).mockResolvedValue(session as never);
+    const updateChain = mockDrizzleChain([
+      {
+        id: "jc-1",
+        userId: "user-1",
+        title: "Backend",
+        excludedKeywords: ["php"],
+        location: null,
+      },
+    ]);
+    vi.mocked(db.update).mockReturnValue(updateChain as never);
+
+    const res = await PATCH(
+      new Request("http://localhost/api/job-configs/jc-1", {
+        method: "PATCH",
+        body: JSON.stringify({ excludedKeywords: ["php"] }),
+      }),
+      { params },
+    );
+
+    expect(res.status).toBe(200);
+    expect(updateChain.set.mock.calls[0][0]).toEqual({
+      excludedKeywords: ["php"],
+    });
+  });
+
+  it("rejects excludedKeywords that isn't a string array", async () => {
+    vi.mocked(requireSession).mockResolvedValue(session as never);
+
+    const res = await PATCH(
+      new Request("http://localhost/api/job-configs/jc-1", {
+        method: "PATCH",
+        body: JSON.stringify({ excludedKeywords: [1] }),
+      }),
+      { params },
+    );
+
+    expect(res.status).toBe(400);
   });
 });
 

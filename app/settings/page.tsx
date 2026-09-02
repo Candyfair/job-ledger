@@ -29,7 +29,7 @@ export default async function SettingsPage() {
       initialJobConfigs={jobConfigs.map((c) => ({
         id: c.id,
         title: c.title,
-        keywords: c.keywords,
+        excludedKeywords: c.excludedKeywords,
         location: c.location,
       }))}
       initialExclusionKeywords={exclusionKeywords.map((k) => ({

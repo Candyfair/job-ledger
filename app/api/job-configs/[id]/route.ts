@@ -21,7 +21,7 @@ export async function PATCH(
 
   const { id } = await params;
   const body = await request.json();
-  const { title, keywords, location } = body ?? {};
+  const { title, excludedKeywords, location } = body ?? {};
 
   if (
     title !== undefined &&
@@ -33,11 +33,12 @@ export async function PATCH(
     );
   }
   if (
-    keywords !== undefined &&
-    (!Array.isArray(keywords) || keywords.some((k) => typeof k !== "string"))
+    excludedKeywords !== undefined &&
+    (!Array.isArray(excludedKeywords) ||
+      excludedKeywords.some((k) => typeof k !== "string"))
   ) {
     return NextResponse.json(
-      { error: "keywords must be an array of strings" },
+      { error: "excludedKeywords must be an array of strings" },
       { status: 400 },
     );
   }
@@ -56,7 +57,7 @@ export async function PATCH(
     .update(jobConfig)
     .set({
       ...(title !== undefined ? { title: title.trim() } : {}),
-      ...(keywords !== undefined ? { keywords } : {}),
+      ...(excludedKeywords !== undefined ? { excludedKeywords } : {}),
       ...(location !== undefined ? { location } : {}),
     })
     .where(and(eq(jobConfig.id, id), eq(jobConfig.userId, session.user.id)))
