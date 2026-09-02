@@ -33,12 +33,6 @@ Global per-site availability — a markup break affects that site's scraper for 
 - `lastErrorAt`, `lastErrorNote` (nullable; `lastErrorNote` holds the French, user-facing "needs review" sentence shown on the settings page)
 - `lastFailureCause` (nullable enum — `markup_broken` | `bot_challenge`; set alongside `active: false` on every deactivation, distinguishes a markup change from a detected bot block so the right message is shown — see SPEC.md §5)
 
-## `ExclusionKeyword`
-
-Global list, shared across all `JobConfig` rows for a given user (or global/anonymous for unauthenticated runs) — deliberately not per-config, since the added complexity wasn't worth it for marginal precision gain.
-
-- `id` (`uuid`), `userId` (`text`, nullable, FK → `user.id`, `onDelete: cascade`), `keyword`, `createdAt`
-
 ## `ScrapeRun`
 
 One row per triggered run.
@@ -63,7 +57,6 @@ Indefinite for all tables above, no automated purge — storage is cheap on self
 
 ```
 User 1─N JobConfig
-User 1─N ExclusionKeyword
 User 1─N ScrapeRun (nullable — anonymous runs have no User)
 ScrapeRun 1─N Listing
 Listing 0─1 Listing (self-reference, duplicateOfListingId)

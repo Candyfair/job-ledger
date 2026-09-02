@@ -14,25 +14,14 @@ type JobConfig = {
   location: string | null;
 };
 
-type ExclusionKeyword = {
-  id: string;
-  keyword: string;
-};
-
 export function SettingsClient({
   initialJobConfigs,
-  initialExclusionKeywords,
 }: {
   initialJobConfigs: JobConfig[];
-  initialExclusionKeywords: ExclusionKeyword[];
 }) {
   const [jobConfigs, setJobConfigs] = useState(initialJobConfigs);
-  const [exclusionKeywords, setExclusionKeywords] = useState(
-    initialExclusionKeywords,
-  );
   const [editingId, setEditingId] = useState<string | "new" | null>(null);
   const [saving, setSaving] = useState(false);
-  const [newKeyword, setNewKeyword] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   async function handleSaveJobConfig(values: JobConfigFormValues) {
@@ -76,37 +65,6 @@ export function SettingsClient({
     if (!res.ok) {
       setJobConfigs(previous);
       setError("Something went wrong deleting that job config.");
-    }
-  }
-
-  async function handleAddKeyword() {
-    const keyword = newKeyword.trim();
-    if (!keyword) return;
-    setError(null);
-    const res = await fetch("/api/exclusion-keywords", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ keyword }),
-    });
-    if (!res.ok) {
-      setError("Something went wrong adding that keyword.");
-      return;
-    }
-    const created = await res.json();
-    setExclusionKeywords((prev) => [...prev, created]);
-    setNewKeyword("");
-  }
-
-  async function handleDeleteKeyword(id: string) {
-    setError(null);
-    const previous = exclusionKeywords;
-    setExclusionKeywords((prev) => prev.filter((k) => k.id !== id));
-    const res = await fetch(`/api/exclusion-keywords/${id}`, {
-      method: "DELETE",
-    });
-    if (!res.ok) {
-      setExclusionKeywords(previous);
-      setError("Something went wrong removing that keyword.");
     }
   }
 
@@ -212,64 +170,6 @@ export function SettingsClient({
               + Add a job config
             </button>
           )}
-        </section>
-
-        <section className="flex flex-col gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-semibold text-zinc-900">
-                Mots-clés exclus
-              </h2>
-              <span className="rounded bg-black px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-white">
-                GLOBAL
-              </span>
-            </div>
-            <p className="text-sm text-zinc-600">
-              Shared across every job config — a listing matching any keyword
-              here is excluded no matter which search found it.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            {exclusionKeywords.map((k) => (
-              <span
-                key={k.id}
-                className="flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-0.5 text-xs text-red-800"
-              >
-                {k.keyword}
-                <button
-                  type="button"
-                  onClick={() => handleDeleteKeyword(k.id)}
-                  aria-label={`Supprimer ${k.keyword}`}
-                  className="text-red-600 hover:text-red-900"
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-          </div>
-
-          <form
-            className="flex gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleAddKeyword();
-            }}
-          >
-            <input
-              value={newKeyword}
-              onChange={(e) => setNewKeyword(e.target.value)}
-              placeholder="ex. stage, junior"
-              aria-label="Nouveau mot-clé exclu"
-              className="flex-1 rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
-            />
-            <button
-              type="submit"
-              className="rounded bg-zinc-300 px-4 py-2 text-sm font-medium text-zinc-900"
-            >
-              Add
-            </button>
-          </form>
         </section>
       </main>
     </div>

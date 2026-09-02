@@ -18,8 +18,7 @@ export default function SignInPage() {
 
       <main className="mx-auto flex w-full max-w-md flex-col gap-6 px-6 py-10">
         <p className="text-center text-sm text-zinc-600">
-          Sign in to save your job searches, exclusion keywords, and site
-          preferences between visits.
+          Sign in to save your job searches and site preferences between visits.
         </p>
         <OAuthButtons />
       </main>

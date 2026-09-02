@@ -5,7 +5,7 @@ Living document. Update it whenever a design decision changes — this is the so
 ## §1. User Roles
 
 - **Anonymous visitor**: can trigger a scrape, choose between the two available models (Claude Haiku / DeepSeek V4 Flash), view the public dashboard. Nothing is persisted for them between visits — no saved job configs, no saved exclusions.
-- **Authenticated user**: everything above, plus persisted job configs, persisted global exclusion keyword list, and settings-page access. Auth via Better Auth, OAuth-only (GitHub, Google) — chosen for auth-provider breadth relevant to a dev-tool audience reviewing the portfolio (GitHub in particular), and to avoid the transactional-email infrastructure (verification, password reset) that email/password would require. Accounts are automatically linked across providers by verified e-mail (accountLinking.trustedProviders: ["google", "github"]) — signing in with a different provider under the same verified e-mail attaches to the existing account rather than creating a duplicate.
+- **Authenticated user**: everything above, plus persisted job configs (each carrying its own excluded-keyword list) and settings-page access. Auth via Better Auth, OAuth-only (GitHub, Google) — chosen for auth-provider breadth relevant to a dev-tool audience reviewing the portfolio (GitHub in particular), and to avoid the transactional-email infrastructure (verification, password reset) that email/password would require. Accounts are automatically linked across providers by verified e-mail (accountLinking.trustedProviders: ["google", "github"]) — signing in with a different provider under the same verified e-mail attaches to the existing account rather than creating a duplicate.
 
 Auth is scoped to persisting user config only — it never gates triggering a scrape or choosing a model. Fallback plan if cost abuse is ever detected on the public demo: default everyone to the cheapest model and add an auth requirement to trigger at all. Not implemented unless/until needed.
 
@@ -32,7 +32,6 @@ Apec.fr and HelloWork. Apec's "partner sites" checkbox is deliberately left unch
 
 1. Settings page, separate from the dashboard — keeps the dashboard focused on consumption, not editing.
 2. CRUD for `JobConfig` (title, excluded keywords, location).
-3. CRUD for the global `ExclusionKeyword` list.
 
 ### View dashboard & toggle exclusions
 
@@ -127,7 +126,7 @@ exhaustive coverage.
 - **Trigger form** (modal or dedicated page) — window, job configs, sites, model choice.
 - **Dashboard, authenticated** — run-history strip (own runs, newest first), listing table/cards for the selected run or "all time", exclusion toggle, duplicate grouping.
 - **Dashboard, anonymous** — single-run view via `?runId=`, no history strip, no aggregate; same listing table/cards, exclusion toggle, duplicate grouping, plus live status polling while the run is `running`. No `runId` (or one that doesn't resolve — nonexistent, or belongs to someone else, treated identically so existence is never leaked) redirects to the trigger form instead of rendering anything at `/`. An authenticated user with zero `ScrapeRun`s redirects the same way — there is nothing to show until they trigger one.
-- **Settings page** — job config CRUD, exclusion keyword CRUD.
+- **Settings page** — job config CRUD (title, excluded keywords, location per config).
 - **Auth pages** — sign in / sign up (email+password, GitHub, Google).
 
 ## §7. API Contracts & Non-Functional Requirements
@@ -197,12 +196,12 @@ exhaustive coverage.
 - `GET /api/listings` — cursor-paginated "load more" for the dashboard's listings (Session 6). `?runId=` scopes to one run (ownership-checked identically to the status endpoint above); omitting it scopes to the caller's own "all time" aggregate (401 without a session in that case).
 - Trigger.dev task → writes directly to Postgres on completion (no callback to Next.js needed).
 
-**API (Settings — JobConfig & ExclusionKeyword CRUD, authenticated only)**
+**API (Settings — JobConfig CRUD, authenticated only)**
 
 - `GET/POST /api/job-configs` — list / create
 - `PATCH /api/job-configs/:id`, `DELETE /api/job-configs/:id`
-- `GET/POST /api/exclusion-keywords` — list / create
-- `DELETE /api/exclusion-keywords/:id`
+
+  `POST` / `PATCH` accept `excludedKeywords?: string[]` (optional, defaults to `[]`).
 
 ### Non-functional
 
@@ -241,3 +240,8 @@ Concrete cases to cover once each piece is built (see CLAUDE.md's Testing sectio
 - Kill-switch visibility on shared runs: when a task is skipped by the kill switch on the shared fan-out path (`scrapeRunId` supplied), the skip is only visible in Trigger.dev task logs, not in `ScrapeRun.status` or the dashboard — no rollup mechanism yet reconciles per-site outcomes into a run's final status. `GET /api/scrape/status/:runId` (§7) is now built (Session 6), but as a live-derived heuristic (`lib/dashboard/derive-run-status.ts`), not a real rollup writer — the underlying gap this bullet describes is still open, just worked around rather than solved. Known consequences of the derived approach: (1) a kill-switch skip still isn't visible anywhere this heuristic reads from; (2) a page whose LLM extraction came back empty with no Playwright error and no `SiteStatus` flip is a real `partial_failure` per §4/§5, but that signal is only recorded in-memory on the single-site standalone scrape path — the production multi-site fan-out path this heuristic reads from has nothing persisted for it, so such a run reads as "completed"; (3) `SiteStatus` being a global singleton per site (not per-run) means attributing a failure to "this run" via a timestamp comparison can misattribute between two runs targeting the same site close together in time. When a real rollup is designed — e.g. `POST /api/scrape/trigger` awaiting per-site completion and writing `ScrapeRun.status` exactly once — it should treat a kill-switch skip as one input among several, the same way `markup_broken`/`bot_challenge` already are via `SiteStatus`, rather than writing directly to the shared `ScrapeRun` row. Deliberately out of scope for Session 6 (the dashboard build) since it touches the Tier-1 `/trigger` fan-out and the "never awaited" completion contract documented on `POST /api/scrape/trigger` itself.
 - Duplicate detection is not implemented: `lib/dedup/` (referenced by DATA_MODEL.md's `Listing.duplicateOfListingId`) was scoped to Session 5, never implemented — the dashboard's duplicate-group UI (Session 6) was built against the column via fixtures only, detection logic remains a dedicated open item.
 - Dark mode: `app/globals.css`'s `@media (prefers-color-scheme: dark)` block and its `--background`/`--foreground` CSS variables are deliberate scaffolding for a real dark mode in v2 — not implemented yet. Every page currently sets an explicit light-mode Tailwind background (`bg-white`, `bg-zinc-50`, etc.) that never responds to that media query, so all text on every page now also carries an explicit light-mode color class (`text-zinc-900` and friends) rather than inheriting `var(--foreground)` — otherwise OS dark mode flips text to a light color against those same light backgrounds and makes it unreadable. When v2 dark mode is actually built, both the backgrounds and these explicit text colors need `dark:` variants added together, not just the variables re-enabled.
+
+### Superseded decisions
+
+- **Global `ExclusionKeyword` list (Sessions 1–5) → removed.** Exclusion keywords were originally a single per-account list (plus a `userId IS NULL` "global/anonymous" list), CRUD'd on the settings page, applied to every run regardless of the job it targeted. This was redundant with what `JobConfig.keywords` should always have been. Exclusion keywords are now **per `JobConfig`** (`JobConfig.excludedKeywords`) for authenticated runs and **per run** (`adHocSearch.excludedKeywords`) for anonymous ones — see §3, §4, §5. The `exclusion_keyword` table, the `/api/exclusion-keywords` routes, and the settings-page section are gone. The matching algorithm and alias table (`lib/filters/`) are unchanged — only the list's source moved.
+- **Session 5's "anonymous exclusion list defaults to empty, no seeding, no fallback" is moot.** There is no global list for an anonymous run to fall back to or be seeded from; anonymous exclusion comes entirely from that run's own `adHocSearch.excludedKeywords` (which may be empty).

@@ -10,7 +10,6 @@ const initialJobConfigs = [
     location: "Anywhere",
   },
 ];
-const initialExclusionKeywords = [{ id: "ek-1", keyword: "PHP" }];
 
 function jsonResponse(body: unknown, status = 200) {
   return { ok: status < 300, status, json: async () => body } as Response;
@@ -21,16 +20,13 @@ beforeEach(() => {
 });
 
 describe("SettingsClient", () => {
-  it("renders the initial job configs and exclusion keywords", () => {
-    render(
-      <SettingsClient
-        initialJobConfigs={initialJobConfigs}
-        initialExclusionKeywords={initialExclusionKeywords}
-      />,
-    );
+  it("renders the initial job configs with their excluded-keyword chips", () => {
+    render(<SettingsClient initialJobConfigs={initialJobConfigs} />);
 
     expect(screen.getByText("Backend / Python & Go")).toBeInTheDocument();
-    expect(screen.getByText("PHP")).toBeInTheDocument();
+    expect(screen.getByText("Excludes:")).toBeInTheDocument();
+    expect(screen.getByText("Python")).toBeInTheDocument();
+    expect(screen.getByText("Go")).toBeInTheDocument();
   });
 
   it("adds a job config", async () => {
@@ -42,12 +38,7 @@ describe("SettingsClient", () => {
     };
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(created, 201));
 
-    render(
-      <SettingsClient
-        initialJobConfigs={initialJobConfigs}
-        initialExclusionKeywords={initialExclusionKeywords}
-      />,
-    );
+    render(<SettingsClient initialJobConfigs={initialJobConfigs} />);
 
     fireEvent.click(screen.getByText("+ Add a job config"));
     fireEvent.change(screen.getByLabelText("JOB TITLE"), {
@@ -71,12 +62,7 @@ describe("SettingsClient", () => {
     const updated = { ...initialJobConfigs[0], title: "Backend / Go only" };
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(updated));
 
-    render(
-      <SettingsClient
-        initialJobConfigs={initialJobConfigs}
-        initialExclusionKeywords={initialExclusionKeywords}
-      />,
-    );
+    render(<SettingsClient initialJobConfigs={initialJobConfigs} />);
 
     fireEvent.click(screen.getByText("Edit"));
     fireEvent.change(screen.getByLabelText("JOB TITLE"), {
@@ -99,12 +85,7 @@ describe("SettingsClient", () => {
       status: 204,
     } as Response);
 
-    render(
-      <SettingsClient
-        initialJobConfigs={initialJobConfigs}
-        initialExclusionKeywords={initialExclusionKeywords}
-      />,
-    );
+    render(<SettingsClient initialJobConfigs={initialJobConfigs} />);
 
     fireEvent.click(screen.getByText("Delete"));
 
@@ -115,55 +96,6 @@ describe("SettingsClient", () => {
     });
     expect(fetch).toHaveBeenCalledWith(
       "/api/job-configs/jc-1",
-      expect.objectContaining({ method: "DELETE" }),
-    );
-  });
-
-  it("adds an exclusion keyword", async () => {
-    const created = { id: "ek-2", keyword: "internship" };
-    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(created, 201));
-
-    render(
-      <SettingsClient
-        initialJobConfigs={initialJobConfigs}
-        initialExclusionKeywords={initialExclusionKeywords}
-      />,
-    );
-
-    fireEvent.change(screen.getByLabelText("Nouveau mot-clé exclu"), {
-      target: { value: "internship" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Add" }));
-
-    await waitFor(() => {
-      expect(screen.getByText("internship")).toBeInTheDocument();
-    });
-    expect(fetch).toHaveBeenCalledWith(
-      "/api/exclusion-keywords",
-      expect.objectContaining({ method: "POST" }),
-    );
-  });
-
-  it("removes an exclusion keyword", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({
-      ok: true,
-      status: 204,
-    } as Response);
-
-    render(
-      <SettingsClient
-        initialJobConfigs={initialJobConfigs}
-        initialExclusionKeywords={initialExclusionKeywords}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Supprimer PHP" }));
-
-    await waitFor(() => {
-      expect(screen.queryByText("PHP")).not.toBeInTheDocument();
-    });
-    expect(fetch).toHaveBeenCalledWith(
-      "/api/exclusion-keywords/ek-1",
       expect.objectContaining({ method: "DELETE" }),
     );
   });

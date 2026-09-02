@@ -41,7 +41,7 @@ Full behavioral spec: see `SPEC.md`. Deployment/infra runbook: see `DEPLOYMENT.m
   - `/lib/dedup`, `/lib/filters` — deterministic logic (see decision #1 — highest-priority unit test targets)
   - `/lib/db.ts`, `/lib/auth.ts`, `/lib/auth-client.ts` — Drizzle client and Better Auth server/client config
   - `/prisma` or `/drizzle` — schema + migrations
-- Static/config-shaped content (default exclusion keywords, site definitions, etc.): always in a typed data file, never hardcoded inline.
+- Static/config-shaped content (keyword aliases, site definitions, etc.): always in a typed data file, never hardcoded inline.
 - Tests live alongside the code they cover (`*.test.ts`), not in a separate mirror tree.
 
 ### Documentation (JSDoc)

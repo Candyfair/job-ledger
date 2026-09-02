@@ -8,7 +8,7 @@ import {
 } from "./enums";
 
 // userId is nullable — anonymous runs don't create one, same pattern as
-// job-config.ts / exclusion-keyword.ts.
+// job-config.ts.
 //
 // lookbackWindowType + lookbackSince model SPEC.md §3's three lookback
 // options (24h / 3 days / since a date) as a type-safe superset rather than
