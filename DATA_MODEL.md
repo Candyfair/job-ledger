@@ -4,7 +4,7 @@ Reference schema. Update when the real Prisma/Drizzle schema changes — this fi
 
 ## `User`
 
-Managed by Better Auth (schema generated via `npx better-auth generate`, OAuth-only per SPEC.md §1). Also generates `session`, `account`, `verification` tables — not detailed here since app code never queries them directly. **Known gap**: `account` needs a hand-added `issuer` column (`text`, not null, unique together with `accountId`) — Better Auth 1.7's "account identity scoped by issuer" change, which neither `better-auth generate` nor `@better-auth/drizzle-adapter`'s codegen produce as of 1.7.1 (upstream gap, confirmed against their own 1-7-upgrade-guide). If a future `generate` run overwrites `drizzle/schema/auth.ts`, re-check whether upstream has caught up before dropping the manual column back in — see the comment in that file.
+Managed by Better Auth (schema generated via `npx better-auth generate`, OAuth-only per SPEC.md §1). Also generates `session`, `account`, `verification` tables — not detailed here since app code doesn't touch their full shape directly. One exception (decided 2026-09-07): the account menu (SPEC.md §3) reads the linked OAuth provider(s) per user directly from the `account` table — exact field name to confirm against the actual Better Auth 1.7 generated schema at implementation time (likely `providerId`, not verified here). **Known gap**: `account` needs a hand-added `issuer` column (`text`, not null, unique together with `accountId`) — Better Auth 1.7's "account identity scoped by issuer" change, which neither `better-auth generate` nor `@better-auth/drizzle-adapter`'s codegen produce as of 1.7.1 (upstream gap, confirmed against their own 1-7-upgrade-guide). If a future `generate` run overwrites `drizzle/schema/auth.ts`, re-check whether upstream has caught up before dropping the manual column back in — see the comment in that file.
 
 - `id` (`text`, Better Auth's own generated ID — **not** a Postgres-generated UUID; every FK to `user.id` from app tables must use `text`, not `uuid`, or the migration fails to match types)
 - `email` (`text`, unique)
@@ -19,8 +19,8 @@ One row per configured job search.
 
 - `id` (`uuid`, `gen_random_uuid()`)
 - `userId` (`text`, nullable — anonymous runs don't create one; FK → `user.id`, `onDelete: cascade`)
-- `title` (e.g. "React front-end") — both the human-readable label **and** the literal search term sent to each site's search (Apec `motsCles`, HelloWork `k`). One search intent per row; two related searches ("React" vs "React Native") are two rows, since combining terms dilutes results on these sites' search UIs.
-- `excludedKeywords` (`text[]`, `NOT NULL DEFAULT '{}'`, e.g. `["fullstack", "senior"]`) — per-config exclusion keywords. A scraped listing whose title matches any of them (whole-word, case/diacritic-insensitive, alias-folded — see SPEC.md §5) is tagged `Listing.excludedByKeyword` at write time. Optional; `[]` excludes nothing. **Per config, not a global account list** — the boards can't express "search X but not Y", so this is where that lives.
+- `title` (e.g. "React front-end")
+- `keywords` (e.g. `["React"]`, or `["React Native", "mobile"]` — this defines a _search pass_; "React" and "React Native/mobile" are two separate `JobConfig` rows, not one combined search, since combining keywords dilutes results on most of these sites' search UIs)
 - `location` (geographic zone — **per config, not global**, so the tool stays generic for other installers with different searches; nullable)
 - `createdAt`
 
@@ -28,22 +28,27 @@ One row per configured job search.
 
 Global per-site availability — a markup break affects that site's scraper for every search running against it, not one job config in isolation. One row per supported site, shared across all users (including anonymous).
 
-- `site` (Apec.fr / HelloWork — Welcome to the Jungle was removed from the `site` enum, see SPEC.md §2)
+- `site` (Welcome to the Jungle / Indeed / Apec.fr / HelloWork)
 - `active` (boolean, default `true`; auto-set to `false` when that site's Playwright task fails — see SPEC.md §5)
-- `lastErrorAt`, `lastErrorNote` (nullable; `lastErrorNote` holds the French, user-facing "needs review" sentence shown on the settings page)
-- `lastFailureCause` (nullable enum — `markup_broken` | `bot_challenge`; set alongside `active: false` on every deactivation, distinguishes a markup change from a detected bot block so the right message is shown — see SPEC.md §5)
+- `lastErrorAt`, `lastErrorNote` (optional, feeds the "needs review" message)
+
+## `ExclusionKeyword`
+
+Global list, shared across all `JobConfig` rows for a given user (or global/anonymous for unauthenticated runs) — deliberately not per-config, since the added complexity wasn't worth it for marginal precision gain.
+
+- `id` (`uuid`), `userId` (`text`, nullable, FK → `user.id`, `onDelete: cascade`), `keyword`, `createdAt`
 
 ## `ScrapeRun`
 
 One row per triggered run.
 
-- `id`, `userId` (nullable), `triggeredAt`, `lookbackWindowType` (`24h` | `3d` | `since_date`), `lookbackSince` (nullable timestamp, set only when `lookbackWindowType` is `since_date`), `modelUsed`, `sitesIncluded`, `jobConfigsIncluded`, `status`
+- `id`, `userId` (nullable — anonymous runs don't create one at trigger time, but may be attached afterward via the anonymous run-claim flow, SPEC.md §3), `triggeredAt`, `lookbackWindow`, `modelUsed`, `sitesIncluded`, `jobConfigsIncluded`, `status`
 
 ## `Listing`
 
 One row per scraped job posting, raw + normalized.
 
-- `id`, `scrapeRunId`, `site`, `title` (`NOT NULL`), `company` (nullable), `companyNormalized` (nullable), `roleCanonical` (nullable), `datePosted` (nullable), `salaryRaw` (nullable), `url` (`NOT NULL` — Playwright-captured, never LLM-produced, see SPEC.md §4), `excludedByKeyword` (computed/cached — array of matched keyword strings, e.g. `["PHP", "Senior"]`; empty/null when not excluded), `duplicateOfListingId` (nullable, self-reference), `createdAt` (`timestamp`, default `now()` — added in Session 6 for the dashboard's "last write" footer; `ScrapeRun.triggeredAt` is run-level and can't answer "when was this specific row written")
+- `id`, `scrapeRunId`, `site`, `title`, `company`, `companyNormalized`, `roleCanonical`, `datePosted`, `salaryRaw`, `url`, `excludedByKeyword` (computed/cached — array of matched keyword strings, e.g. `["PHP", "Senior"]`; empty/null when not excluded), `duplicateOfListingId` (nullable, self-reference)
 
 ## `RateLimitCounter`
 
@@ -57,7 +62,8 @@ Indefinite for all tables above, no automated purge — storage is cheap on self
 
 ```
 User 1─N JobConfig
-User 1─N ScrapeRun (nullable — anonymous runs have no User)
+User 1─N ExclusionKeyword
+User 1─N ScrapeRun (nullable — anonymous runs have no User at creation; may gain one later via claim, SPEC.md §3)
 ScrapeRun 1─N Listing
 Listing 0─1 Listing (self-reference, duplicateOfListingId)
 ```
