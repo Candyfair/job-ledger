@@ -58,6 +58,11 @@ export default async function DashboardPage({
 
     return (
       <DashboardClient
+        // Keyed by the selected run so switching runs remounts the client with
+        // the freshly SSR-fetched, run-scoped listings — its listing state is
+        // seeded from props once and never re-synced in place (SPEC.md §3:
+        // client view state resets on reload anyway).
+        key={selectedRunId ?? "all"}
         mode="authenticated"
         initialRuns={runs}
         initialRunsCursor={encodeCursor(runsCursor)}

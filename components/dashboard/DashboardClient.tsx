@@ -104,8 +104,14 @@ export function DashboardClient(props: DashboardClientProps) {
       .catch(() => {});
   }, [polledStatus, props.mode]);
 
+  // The run whose listings this view is scoped to, for "load more" paging:
+  // the `?runId=` run in anonymous mode, the selected run (if any) when
+  // authenticated. `null` means the authenticated all-time aggregate, which
+  // `/api/listings` scopes to the session owner instead.
   const runId =
-    props.mode === "anonymous-run" ? props.initialStatus.runId : null;
+    props.mode === "anonymous-run"
+      ? props.initialStatus.runId
+      : props.selectedRunId;
 
   const currentRunSummary: RunStatusPayload | null =
     props.mode === "anonymous-run"
@@ -176,6 +182,16 @@ export function DashboardClient(props: DashboardClientProps) {
   const duplicateGroupCount = groups.filter(
     (g) => g.duplicates.length > 0,
   ).length;
+  // Rows actually on screen: one per group, plus a group's folded duplicates
+  // only while it is expanded. Not `visibleListings.length`, which also counts
+  // duplicates that render inside their primary's group rather than as a row.
+  const renderedRowCount = groups.reduce(
+    (total, group) =>
+      total +
+      1 +
+      (expandedGroupIds.has(group.primary.id) ? group.duplicates.length : 0),
+    0,
+  );
   const lastWriteIso = listings[0]?.createdAt ?? null;
 
   return (
@@ -225,7 +241,7 @@ export function DashboardClient(props: DashboardClientProps) {
 
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <p className="text-sm text-zinc-600">
-            {visibleListings.length} annonces · {excludedCount} exclues ·{" "}
+            {renderedRowCount} annonces · {excludedCount} exclues ·{" "}
             {duplicateGroupCount} groupes de doublons · triées du plus récent
           </p>
           <div className="hidden md:block">

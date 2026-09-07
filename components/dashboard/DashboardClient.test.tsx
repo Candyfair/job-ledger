@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { DashboardClient } from "./DashboardClient";
 import type { ListingDTO } from "@/lib/dashboard/listing-query";
 
@@ -73,5 +73,103 @@ describe("DashboardClient — global exclusion mode composition", () => {
     expect(screen.queryByText(/Excluded Job/)).not.toBeInTheDocument();
     expect(screen.getAllByText(/Kept Job/).length).toBeGreaterThan(0);
     expect(screen.getByText(/0 exclues/)).toBeInTheDocument();
+  });
+});
+
+describe("DashboardClient — run-scoped listing view", () => {
+  const originalFetch = global.fetch;
+
+  beforeEach(() => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ listings: [], nextCursor: null }),
+    }) as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  function renderForRun(runId: string | null, listings: ListingDTO[]) {
+    return render(
+      <DashboardClient
+        mode="authenticated"
+        initialRuns={[]}
+        initialRunsCursor={null}
+        selectedRunId={runId}
+        initialListings={listings}
+        initialListingsCursor="cursor-1"
+      />,
+    );
+  }
+
+  it("remounting for another run replaces the table and the counter", () => {
+    const runAListing = makeListing({
+      id: "a-1",
+      title: "Run A Job",
+      scrapeRunId: "run-a",
+    });
+    const runBListing = makeListing({
+      id: "b-1",
+      title: "Run B Job",
+      scrapeRunId: "run-b",
+    });
+
+    renderForRun("run-a", [runAListing]);
+    expect(screen.getAllByText(/Run A Job/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/1 annonces/)).toBeInTheDocument();
+
+    // `app/page.tsx` keys <DashboardClient> by the selected run, so switching
+    // runs unmounts the old instance and mounts a fresh one seeded from the
+    // new run's SSR-fetched listings.
+    cleanup();
+    renderForRun("run-b", [runBListing, makeListing({ id: "b-2" })]);
+
+    expect(screen.queryByText(/Run A Job/)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Run B Job/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/2 annonces/)).toBeInTheDocument();
+  });
+
+  it("'Charger plus' scopes the fetch to the selected run", async () => {
+    renderForRun("run-a", [makeListing({ id: "a-1" })]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Charger plus" }));
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const url = new URL(
+      vi.mocked(global.fetch).mock.calls[0][0] as string,
+      "http://localhost",
+    );
+    expect(url.pathname).toBe("/api/listings");
+    expect(url.searchParams.get("runId")).toBe("run-a");
+    expect(url.searchParams.get("cursor")).toBe("cursor-1");
+  });
+
+  it("'Charger plus' for the all-time view sends no runId", async () => {
+    renderForRun(null, [makeListing({ id: "a-1" })]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Charger plus" }));
+
+    const url = new URL(
+      vi.mocked(global.fetch).mock.calls[0][0] as string,
+      "http://localhost",
+    );
+    expect(url.searchParams.has("runId")).toBe(false);
+  });
+
+  it("counts rendered rows, not folded duplicates, as 'annonces'", () => {
+    const primary = makeListing({ id: "p-1", title: "Primary Job" });
+    const duplicate = makeListing({
+      id: "d-1",
+      title: "Duplicate Job",
+      duplicateOfListingId: "p-1",
+    });
+
+    renderForRun("run-a", [primary, duplicate]);
+
+    // Two listings, one group, one visible row.
+    expect(screen.getByText(/1 annonces/)).toBeInTheDocument();
+    expect(screen.getByText(/1 groupes de doublons/)).toBeInTheDocument();
   });
 });
