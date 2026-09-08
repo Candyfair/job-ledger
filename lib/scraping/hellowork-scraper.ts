@@ -92,10 +92,11 @@ async function readResultCount(page: Page): Promise<number | null> {
 /**
  * Navigates to and captures one page of HelloWork search results.
  *
- * Same contract as `captureApecPage`: dismiss cookie consent, check for a
+ * Implements {@link CaptureSitePage}: dismiss cookie consent, check for a
  * bot-verification interstitial, then read one raw text blob + the detail
  * href per card (Playwright captures, Claude structures — CLAUDE.md
- * decision #1).
+ * decision #1). Apec no longer shares this shape — it moved to a direct
+ * web-service call (`runApecApiScrape`).
  *
  * Empty results vs. markup change: HelloWork's `<h1>` count heading is the
  * source of truth. A parsed `0` is a legitimate empty result and returns

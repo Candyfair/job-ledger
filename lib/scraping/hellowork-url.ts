@@ -65,9 +65,9 @@ function helloworkDateFilter(lookback: LookbackWindow): string {
 /**
  * Builds a HelloWork search-results URL.
  *
- * `params.page` is 0-indexed (the {@link runSiteScrape} convention, shared
- * with `buildApecSearchUrl`); HelloWork's own `p` param is 1-indexed, so it
- * is emitted as `page + 1` and omitted for the first page.
+ * `params.page` is 0-indexed (the {@link runSiteScrape} convention);
+ * HelloWork's own `p` param is 1-indexed, so it is emitted as `page + 1`
+ * and omitted for the first page.
  *
  * `params.lookback` maps to the `d` filter: `24h` → `d=h`, `3d` → `d=d`,
  * `since_date` → `d=all` (see {@link helloworkDateFilter}). The

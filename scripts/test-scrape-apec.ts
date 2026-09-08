@@ -1,93 +1,124 @@
-// Standalone harness for iterating on the Apec.fr scraping + extraction
+// Standalone harness for iterating on the Apec.fr direct-API scraping
 // pipeline without the Trigger.dev dev cycle. No DB writes — prints the
-// final merged + lookback-filtered listings as JSON.
+// final normalized + lookback-filtered listings as JSON.
 //
-// Usage: npm run test:scrape:apec
+// This is also the live blocking-behavior probe: it fires several real
+// cookieless POSTs to Apec's search web-service a few seconds apart. Watch
+// for a non-200, a 429, or a challenge body — those surface as
+// ScrapeBlockedError / ScrapeMarkupError here.
+//
+// Usage: npm run test:scrape:apec  (Node 22 — `nvm use 22` first)
 
-import { chromium } from "playwright";
 import { ClaudeHaikuAdapter } from "@/lib/extraction/claude-haiku";
-import { mergeListingsWithUrls } from "@/lib/extraction/merge-listings";
-import {
-  isWithinLookbackWindow,
-  type LookbackWindow,
-} from "@/lib/extraction/lookback-window";
-import { captureApecPage } from "@/lib/scraping/apec-scraper";
-import { buildDelimitedContent } from "@/lib/scraping/delimited-content";
-import {
-  sleep,
-  randomDelayMs,
-  SCRAPER_USER_AGENT,
-} from "@/lib/scraping/politeness";
+import { isWithinLookbackWindow } from "@/lib/extraction/lookback-window";
+import type { LookbackWindow } from "@/lib/extraction/lookback-window";
+import { normalizeCompany } from "@/lib/dedup/normalize-company";
+import { fetchApecResultsPage, APEC_PAGE_SIZE } from "@/lib/scraping/apec-api";
+import { resolveApecLocation } from "@/lib/scraping/apec-location";
+import { sleep, randomDelayMs } from "@/lib/scraping/politeness";
 import { ScrapeBlockedError, ScrapeMarkupError } from "@/lib/scraping/errors";
 
 // Hardcoded search params for local iteration — no JobConfig, no trigger form.
 const SEARCH = {
   searchTerm: "développeur",
-  location: "Paris",
+  location: "Paris" as string | null,
   lookback: { type: "3d" } as LookbackWindow,
 };
 
 const VOLUME_CAP = 50; // SPEC.md §7
+const MAX_PAGES = 5;
 
 async function main() {
-  const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({ userAgent: SCRAPER_USER_AGENT });
+  let lieux: string[] | undefined;
+  if (SEARCH.location) {
+    const located = await resolveApecLocation(SEARCH.location);
+    if (located.code === null) {
+      console.error(
+        `Location "${SEARCH.location}" did not resolve to an Apec lieuId — would skip Apec for this run.`,
+      );
+      return;
+    }
+    lieux = [located.code];
+    console.error(`Resolved "${SEARCH.location}" → lieuId ${located.code}`);
+  }
 
   const adapter = new ClaudeHaikuAdapter();
-  const finalListings: unknown[] = [];
+  const collected: {
+    title: string;
+    company: string | null;
+    companyNormalized: string | null;
+    roleCanonical: string | null;
+    datePosted: string | null;
+    salaryRaw: string | null;
+    url: string;
+  }[] = [];
 
   try {
     let pageNum = 0;
-    let hasMore = true;
+    let fetched = 0;
+    let totalCount = Infinity;
 
-    while (hasMore && finalListings.length < VOLUME_CAP) {
-      if (pageNum > 0) {
-        await sleep(randomDelayMs());
-      }
+    while (
+      collected.length < VOLUME_CAP &&
+      fetched < totalCount &&
+      pageNum < MAX_PAGES
+    ) {
+      if (pageNum > 0) await sleep(randomDelayMs());
 
       console.error(`Fetching page ${pageNum}...`);
-      const { listings: captured, hasMore: more } = await captureApecPage(
-        page,
-        {
-          searchTerm: SEARCH.searchTerm,
-          location: SEARCH.location,
-          lookback: SEARCH.lookback,
-          page: pageNum,
-        },
+      const page = await fetchApecResultsPage({
+        searchTerm: SEARCH.searchTerm,
+        lieux,
+        page: pageNum,
+      });
+      totalCount = page.totalCount;
+      fetched += page.listings.length;
+      console.error(
+        `  ${page.listings.length} listings, totalCount=${totalCount}`,
       );
 
-      if (captured.length === 0) break;
+      if (page.listings.length === 0) break;
 
-      const delimited = buildDelimitedContent(captured);
-      const extracted = await adapter.extractListings(delimited);
-      const merged = mergeListingsWithUrls(extracted, captured);
-
-      for (const listing of merged) {
-        if (isWithinLookbackWindow(listing.datePosted, SEARCH.lookback)) {
-          finalListings.push(listing);
-        }
+      for (const l of page.listings) {
+        if (!isWithinLookbackWindow(l.datePosted, SEARCH.lookback)) continue;
+        collected.push({
+          title: l.title,
+          company: l.company,
+          companyNormalized: l.company ? normalizeCompany(l.company) : null,
+          roleCanonical: null,
+          datePosted: l.datePosted,
+          salaryRaw: l.salaryRaw,
+          url: l.url,
+        });
+        if (collected.length >= VOLUME_CAP) break;
       }
-
-      hasMore = more;
       pageNum += 1;
+    }
+
+    if (collected.length > 0) {
+      const roles = await adapter.canonicalizeRoles(
+        collected.map((c) => c.title),
+      );
+      collected.forEach((c, i) => {
+        c.roleCanonical = roles[i] ?? null;
+      });
     }
   } catch (error) {
     if (
       error instanceof ScrapeBlockedError ||
       error instanceof ScrapeMarkupError
     ) {
-      console.error(`BLOCKED: [${error.name}] ${error.message}`);
+      console.error(`BLOCKED/DRIFT: [${error.name}] ${error.message}`);
       process.exitCode = 1;
       return;
     }
     throw error;
-  } finally {
-    await browser.close();
   }
 
-  console.log(JSON.stringify(finalListings, null, 2));
+  console.log(JSON.stringify(collected, null, 2));
   console.error(
-    `\nDone. ${finalListings.length} listing(s) within the lookback window.`,
+    `\nDone. ${collected.length} listing(s) within the lookback window ` +
+      `(page size ${APEC_PAGE_SIZE}).`,
   );
 }
 
