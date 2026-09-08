@@ -116,6 +116,11 @@ export interface RunSiteScrapeResult {
    * orchestrating endpoint owns the run's lifecycle. */
   status: "completed" | "partial_failure" | null;
   anyPageExtractionFailed: boolean;
+  /** Present only when a site contributed nothing for a reason worth
+   * surfacing to the operator (e.g. Apec's location string didn't resolve).
+   * A soft signal — it rides alongside a `partial_failure`, never a
+   * `SiteStatus` flip. */
+  note?: string;
 }
 
 /**
@@ -323,12 +328,16 @@ export async function finalizeScrapeRun({
   context,
   collected,
   anyPageExtractionFailed,
+  note,
 }: {
   site: Site;
   payload: ScrapeSitePayload;
   context: ResolvedScrapeContext;
   collected: CollectedListing[];
   anyPageExtractionFailed: boolean;
+  /** Optional operator-facing reason a site contributed nothing — surfaced
+   * on {@link RunSiteScrapeResult.note}. */
+  note?: string;
 }): Promise<RunSiteScrapeResult> {
   let scrapeRunId: string;
   let status: RunSiteScrapeResult["status"] = null;
@@ -379,6 +388,7 @@ export async function finalizeScrapeRun({
     listingCount: collected.length,
     status,
     anyPageExtractionFailed,
+    ...(note ? { note } : {}),
   };
 }
 
