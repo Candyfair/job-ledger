@@ -117,4 +117,53 @@ describe("DeepSeekV4FlashAdapter", () => {
 
     expect(result).toEqual([]);
   });
+
+  describe("canonicalizeRoles", () => {
+    it("returns an index-aligned array from the forced tool call", async () => {
+      mockCreate.mockResolvedValue({
+        stop_reason: "end_turn",
+        content: [
+          {
+            type: "tool_use",
+            name: "submit_roles",
+            input: {
+              roles: [
+                { index: 0, roleCanonical: "frontend-developer" },
+                { index: 1, roleCanonical: null },
+              ],
+            },
+          },
+        ],
+      });
+
+      const adapter = new DeepSeekV4FlashAdapter();
+      const result = await adapter.canonicalizeRoles([
+        "Dév Frontend React",
+        "garbled",
+      ]);
+
+      expect(result).toEqual(["frontend-developer", null]);
+    });
+
+    it("degrades to an all-null array (no throw) when the tool is not called", async () => {
+      mockCreate.mockResolvedValue({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "no." }],
+      });
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      const adapter = new DeepSeekV4FlashAdapter();
+      const result = await adapter.canonicalizeRoles(["a", "b", "c"]);
+
+      expect(result).toEqual([null, null, null]);
+    });
+
+    it("makes no API call and returns [] for an empty title list", async () => {
+      const adapter = new DeepSeekV4FlashAdapter();
+      const result = await adapter.canonicalizeRoles([]);
+
+      expect(result).toEqual([]);
+      expect(mockCreate).not.toHaveBeenCalled();
+    });
+  });
 });

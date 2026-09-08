@@ -1,5 +1,5 @@
 import { modelUsedEnum } from "@/drizzle/schema";
-import type { ExtractionAdapter } from "./adapter";
+import type { ExtractionAdapter, RoleCanonicalizer } from "./adapter";
 import { ClaudeHaikuAdapter } from "./claude-haiku";
 import { DeepSeekV4FlashAdapter } from "./deepseek-v4-flash";
 
@@ -23,9 +23,11 @@ const REQUIRED_API_KEY_ENV: Record<ModelUsed, string> = {
 };
 
 /**
- * Resolves a persisted `modelUsed` value to its {@link ExtractionAdapter}
- * (CLAUDE.md decision #2 — model choice stays a config switch behind the
- * adapter interface, never a rewrite).
+ * Resolves a persisted `modelUsed` value to its adapter — the intersection
+ * of {@link ExtractionAdapter} and {@link RoleCanonicalizer}, since both
+ * concrete adapters implement both and the direct-API Apec path needs only
+ * the latter (CLAUDE.md decision #2 — model choice stays a config switch
+ * behind the adapter interface, never a rewrite).
  *
  * Runs at adapter selection (in `runSiteScrape`, before Playwright launches),
  * so a missing/empty key fails fast and legibly here instead of deep inside
@@ -37,7 +39,9 @@ const REQUIRED_API_KEY_ENV: Record<ModelUsed, string> = {
  *   `ANTHROPIC_API_KEY` when `apiKey` is `undefined`, not `""`, so an empty
  *   `DEEPSEEK_API_KEY` is sent verbatim to `api.deepseek.com` and 401s there.
  */
-export function getExtractionAdapter(model: ModelUsed): ExtractionAdapter {
+export function getExtractionAdapter(
+  model: ModelUsed,
+): ExtractionAdapter & RoleCanonicalizer {
   const keyEnv = REQUIRED_API_KEY_ENV[model];
   if (!process.env[keyEnv]) {
     throw new Error(

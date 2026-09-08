@@ -1,10 +1,17 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { ExtractedListingSchema, type ExtractedListing } from "./schema";
 import { EXTRACTION_SYSTEM_PROMPT, buildExtractionUserMessage } from "./prompt";
-import type { ExtractionAdapter } from "./adapter";
+import type { ExtractionAdapter, RoleCanonicalizer } from "./adapter";
 import { EXTRACTION_JSON_SCHEMA } from "./json-schema";
+import {
+  ROLE_CANONICAL_SYSTEM_PROMPT,
+  ROLE_CANONICAL_JSON_SCHEMA,
+  buildRoleCanonicalUserMessage,
+  alignRolesToTitles,
+} from "./roles-prompt";
 
 const SUBMIT_LISTINGS_TOOL = "submit_listings";
+const SUBMIT_ROLES_TOOL = "submit_roles";
 
 // Own client instance, deliberately never shared with claude-haiku.ts's
 // module-scope `client`: separate baseURL AND separate API key. Both
@@ -47,7 +54,9 @@ const client = new Anthropic({
  * content block, and that this combines cleanly with the forced tool call
  * below (response is a single `tool_use` block, `stop_reason: "tool_use"`).
  */
-export class DeepSeekV4FlashAdapter implements ExtractionAdapter {
+export class DeepSeekV4FlashAdapter
+  implements ExtractionAdapter, RoleCanonicalizer
+{
   /**
    * Structures raw delimited listing text into {@link ExtractedListing}s.
    * Never throws on a model-side failure (refusal, `max_tokens` cutoff, no
@@ -125,5 +134,69 @@ export class DeepSeekV4FlashAdapter implements ExtractionAdapter {
       }
     }
     return validListings;
+  }
+
+  /**
+   * Classifies raw titles into canonical role signatures via the same
+   * forced-tool mechanism {@link extractListings} uses (DeepSeek's endpoint
+   * can't do native `json_schema` output). Same never-throw contract: a
+   * refusal, a missing tool call, a transport error, or unparseable input
+   * all resolve to an all-`null` array of the right length.
+   */
+  async canonicalizeRoles(titles: string[]): Promise<(string | null)[]> {
+    if (titles.length === 0) return [];
+    const allNull = () => titles.map(() => null);
+
+    try {
+      const response = await client.messages.create({
+        model: "deepseek-v4-flash",
+        max_tokens: 4096,
+        temperature: 0,
+        system: ROLE_CANONICAL_SYSTEM_PROMPT,
+        messages: [
+          { role: "user", content: buildRoleCanonicalUserMessage(titles) },
+        ],
+        thinking: { type: "disabled" },
+        tools: [
+          {
+            name: SUBMIT_ROLES_TOOL,
+            description:
+              "Submit the canonical role signature for each numbered title.",
+            input_schema:
+              ROLE_CANONICAL_JSON_SCHEMA as unknown as Anthropic.Tool.InputSchema,
+          },
+        ],
+        tool_choice: { type: "tool", name: SUBMIT_ROLES_TOOL },
+      });
+
+      if (
+        response.stop_reason === "refusal" ||
+        response.stop_reason === "max_tokens"
+      ) {
+        console.warn(
+          `DeepSeek V4 Flash role canonicalization failed: stop_reason=${response.stop_reason}`,
+        );
+        return allNull();
+      }
+
+      const toolUseBlock = response.content.find(
+        (block) =>
+          block.type === "tool_use" && block.name === SUBMIT_ROLES_TOOL,
+      );
+      if (!toolUseBlock) {
+        console.warn(
+          `DeepSeek V4 Flash did not call ${SUBMIT_ROLES_TOOL} for role canonicalization`,
+        );
+        return allNull();
+      }
+
+      return alignRolesToTitles(
+        titles.length,
+        (toolUseBlock as { input?: unknown }).input,
+      );
+    } catch (error) {
+      console.warn("DeepSeek V4 Flash role canonicalization threw:", error);
+      return allNull();
+    }
   }
 }

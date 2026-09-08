@@ -78,4 +78,39 @@ describe("extraction adapter contract", () => {
     expect(deepseekResult).toEqual(FIXTURE_LISTINGS);
     expect(deepseekResult).toEqual(haikuResult);
   });
+
+  it("canonicalizeRoles resolves to the same index-aligned array for both adapters", async () => {
+    const titles = [
+      "Développeur Frontend Senior React",
+      "Ingénieur Backend Python/Django",
+    ];
+    const roles = [
+      { index: 0, roleCanonical: "frontend-developer" },
+      { index: 1, roleCanonical: "backend-developer" },
+    ];
+    mockCreate.mockImplementation((params: { model: string }) => {
+      if (params.model === "deepseek-v4-flash") {
+        return Promise.resolve({
+          stop_reason: "end_turn",
+          content: [
+            { type: "tool_use", name: "submit_roles", input: { roles } },
+          ],
+        });
+      }
+      return Promise.resolve({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: JSON.stringify({ roles }) }],
+      });
+    });
+
+    const haikuResult = await new ClaudeHaikuAdapter().canonicalizeRoles(
+      titles,
+    );
+    const deepseekResult = await new DeepSeekV4FlashAdapter().canonicalizeRoles(
+      titles,
+    );
+
+    expect(haikuResult).toEqual(["frontend-developer", "backend-developer"]);
+    expect(deepseekResult).toEqual(haikuResult);
+  });
 });

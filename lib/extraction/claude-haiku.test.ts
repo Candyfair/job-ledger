@@ -87,4 +87,51 @@ describe("ClaudeHaikuAdapter", () => {
 
     expect(result).toEqual([]);
   });
+
+  describe("canonicalizeRoles", () => {
+    it("returns an index-aligned array, tolerating a reordered / dropped entry", async () => {
+      mockCreate.mockResolvedValue({
+        stop_reason: "end_turn",
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              roles: [
+                { index: 1, roleCanonical: "backend-developer" },
+                { index: 0, roleCanonical: "frontend-developer" },
+                // no entry for index 2 — must come back null
+              ],
+            }),
+          },
+        ],
+      });
+
+      const adapter = new ClaudeHaikuAdapter();
+      const result = await adapter.canonicalizeRoles([
+        "Dév Frontend React",
+        "Ingénieur Backend Python",
+        "???",
+      ]);
+
+      expect(result).toEqual(["frontend-developer", "backend-developer", null]);
+    });
+
+    it("makes no API call and returns [] for an empty title list", async () => {
+      const adapter = new ClaudeHaikuAdapter();
+      const result = await adapter.canonicalizeRoles([]);
+
+      expect(result).toEqual([]);
+      expect(mockCreate).not.toHaveBeenCalled();
+    });
+
+    it("degrades to an all-null array (no throw) on a transport error", async () => {
+      mockCreate.mockRejectedValue(new Error("network down"));
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      const adapter = new ClaudeHaikuAdapter();
+      const result = await adapter.canonicalizeRoles(["a", "b"]);
+
+      expect(result).toEqual([null, null]);
+    });
+  });
 });
