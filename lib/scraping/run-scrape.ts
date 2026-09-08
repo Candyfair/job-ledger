@@ -22,7 +22,7 @@ import { isKillSwitchActive } from "./kill-switch";
 
 // SPEC.md §7 — hard ceiling on listings persisted per run, independent of the
 // model or the number of result pages a site has.
-const VOLUME_CAP = 50;
+export const VOLUME_CAP = 50;
 
 /**
  * One listing card captured off a results page by a site scraper. `rawText`
@@ -62,7 +62,7 @@ export type CaptureSitePage = (
  */
 export interface ScrapeSitePayload {
   /** Persisted-row lookup path. Exactly one of `jobConfigId` /
-   * `adHocConfig` must be set — {@link runSiteScrape} throws otherwise. */
+   * `adHocConfig` must be set — {@link resolveScrapeContext} throws otherwise. */
   jobConfigId?: string;
   /** Inline, never-persisted search params for an anonymous ad-hoc run
    * (`/api/scrape/trigger`'s `adHocSearch` field) — there is no `JobConfig`
@@ -92,7 +92,14 @@ interface RunSiteScrapeOptions {
   extractionAdapter?: ExtractionAdapter;
 }
 
-type CollectedListing = {
+/**
+ * One in-window listing ready to persist. Both `companyNormalized` and
+ * `roleCanonical` are nullable: the LLM extraction path fills them, the
+ * direct-API Apec path fills `companyNormalized` deterministically and
+ * `roleCanonical` via a separate batched adapter call, and either may be
+ * `null` when the source signal is absent.
+ */
+export type CollectedListing = {
   title: string;
   company: string | null;
   companyNormalized: string | null;
@@ -102,7 +109,7 @@ type CollectedListing = {
   url: string;
 };
 
-interface RunSiteScrapeResult {
+export interface RunSiteScrapeResult {
   scrapeRunId: string;
   listingCount: number;
   /** The status this task wrote, or `null` on the reuse path where the
@@ -137,7 +144,7 @@ interface RunSiteScrapeResult {
  *   correct it even if every sibling site went on to succeed. So this
  *   branch leaves `ScrapeRun.status` untouched — same as the other
  *   failure causes — and only `console.warn`s, matching the existing
- *   soft-signal convention in `apec-scraper.ts` / `hellowork-scraper.ts`.
+ *   soft-signal convention in `hellowork-scraper.ts`.
  */
 async function recordKillSwitchSkip(
   site: Site,
@@ -185,58 +192,35 @@ async function recordKillSwitchSkip(
 }
 
 /**
- * The shared body of every `scrape-<site>` task: paginate the site's results
- * with a randomized delay between pages, structure each page through the
- * extraction adapter, re-attach captured URLs, keep only listings inside the
- * lookback window, and persist up to {@link VOLUME_CAP} of them.
- *
- * Checks the kill switch (`isKillSwitchActive`) before anything else —
- * before payload validation, the `JobConfig` lookup, and certainly before
- * launching Playwright — and short-circuits to {@link recordKillSwitchSkip}
- * when active. This guards against a task that was already queued before an
- * operator flipped the switch.
- *
- * Side effects:
- * - `SiteStatus` (upsert, via `markSiteFailed`): only when the scrape loop
- *   throws — a selector timeout, navigation failure, `ScrapeMarkupError`, or
- *   `ScrapeBlockedError`. A single page's extraction returning `[]` is NOT a
- *   site failure; it sets `anyPageExtractionFailed` and downgrades the run to
- *   `partial_failure`.
- * - `ScrapeRun` (insert): only when `payload.scrapeRunId` is absent. When it
- *   is provided the row already exists and its `status` is left untouched —
- *   the caller rolls per-site outcomes up. This holds for the kill switch
- *   too: {@link recordKillSwitchSkip} only inserts a new row on the
- *   `scrapeRunId`-absent path; on the shared-row path it logs and leaves
- *   `status` alone, same as every other failure cause today.
- * - `Listing` (bulk insert): only when at least one in-window listing was
- *   collected.
- *
- * `Listing.excludedByKeyword` is computed here, at write time, rather than
- * lazily at read time: the resolved exclusion-keyword list (per-`JobConfig`
- * `excludedKeywords` on the persisted path, per-run
- * `adHocConfig.excludedKeywords` on the anonymous path) is checked against
- * each collected listing's title via {@link matchExclusionKeywords} right
- * before the bulk insert, so every inserted row always carries an array
- * (never `null`) — empty when nothing matched, and also empty when the
- * config / ad-hoc search supplied no exclusion keywords at all.
- *
- * Exactly one of `payload.jobConfigId` / `payload.adHocConfig` must be set —
- * this is checked with an explicit runtime throw at the top of the
- * function, not just enforced by the type, since `task()` payloads cross a
- * JSON boundary with no schema validation (see the `since: Date` note
- * below). `jobConfigId` looks up a persisted `JobConfig` row; `adHocConfig`
- * (anonymous ad-hoc search, `/api/scrape/trigger`) skips that DB lookup
- * entirely and uses its `title`/`excludedKeywords`/`location` directly,
- * since an ad-hoc search is explicitly never persisted (SPEC.md §3). On
- * both paths `title` is the literal site-search term (Apec `motsCles`,
- * HelloWork `k`) and is always non-empty (required / validated non-blank),
- * so no empty-query guard is needed. `ScrapeRun.jobConfigsIncluded` is `[]`
- * on the ad-hoc path.
- *
- * `payload.model` selects the extraction adapter via
- * {@link getExtractionAdapter} and is written to `ScrapeRun.modelUsed`;
- * omitted defaults to `"claude_haiku"` (Trigger.dev Test tab / standalone
- * invocation, same testing-convenience pattern as `scrapeRunId`).
+ * The resolved, ready-to-scrape search parameters for one `scrape-<site>`
+ * task — everything derived from the payload before any network work, shared
+ * by {@link runSiteScrape} (HelloWork, Playwright) and `runApecApiScrape`
+ * (Apec, direct API). `lookback.since` is already a real `Date` here (see
+ * {@link resolveScrapeContext}).
+ */
+export interface ResolvedScrapeContext {
+  searchTerm: string;
+  excludedKeywords: string[];
+  location: string | null;
+  resolvedJobConfigId: string | null;
+  lookback: LookbackWindow;
+  lookbackSince: Date | null;
+}
+
+/**
+ * Either a resolved context ready to scrape, or a short-circuit result to
+ * return verbatim because the kill switch was active.
+ */
+export type ScrapeContextResolution =
+  { killSwitchSkip: RunSiteScrapeResult } | { context: ResolvedScrapeContext };
+
+/**
+ * Runs the pre-scrape work every `scrape-<site>` task shares: the kill-switch
+ * check (before anything else — before payload validation, the `JobConfig`
+ * lookup, and certainly before any network call), the
+ * exactly-one-of-`jobConfigId`/`adHocConfig` validation, the `JobConfig`
+ * lookup or ad-hoc-payload passthrough, and the `lookback.since` `Date`
+ * coercion.
  *
  * `payload.lookback.since` is coerced back to a real `Date` here: an
  * externally-triggered payload crosses a JSON serialization boundary and
@@ -244,17 +228,19 @@ async function recordKillSwitchSkip(
  * the `LookbackWindow` type. Coercing once keeps both the DB write and the
  * `isWithinLookbackWindow` comparison correct.
  *
- * Re-throws after recording the failure so Trigger.dev marks the attempt
- * failed.
+ * @returns `{ killSwitchSkip }` — return it unchanged — when the kill switch
+ *   is active; otherwise `{ context }`.
+ * @throws Error when neither or both of `payload.jobConfigId` /
+ *   `payload.adHocConfig` are set, or when a supplied `jobConfigId` has no
+ *   row. `task()` payloads cross a JSON boundary with no schema validation,
+ *   so this is an explicit runtime check, not just a type guarantee.
  */
-export async function runSiteScrape({
-  site,
-  capturePage,
-  payload,
-  extractionAdapter,
-}: RunSiteScrapeOptions): Promise<RunSiteScrapeResult> {
+export async function resolveScrapeContext(
+  site: Site,
+  payload: ScrapeSitePayload,
+): Promise<ScrapeContextResolution> {
   if (isKillSwitchActive()) {
-    return recordKillSwitchSkip(site, payload);
+    return { killSwitchSkip: await recordKillSwitchSkip(site, payload) };
   }
 
   if (!!payload.jobConfigId === !!payload.adHocConfig) {
@@ -293,6 +279,149 @@ export async function runSiteScrape({
       ? { type: "since_date", since: new Date(payload.lookback.since) }
       : payload.lookback;
   const lookbackSince = lookback.type === "since_date" ? lookback.since : null;
+
+  return {
+    context: {
+      searchTerm,
+      excludedKeywords,
+      location,
+      resolvedJobConfigId,
+      lookback,
+      lookbackSince,
+    },
+  };
+}
+
+/**
+ * The shared tail of every `scrape-<site>` task: create or reuse the
+ * `ScrapeRun` row, then bulk-insert the collected listings with their
+ * `excludedByKeyword` tags. Called by {@link runSiteScrape} (HelloWork) and
+ * `runApecApiScrape` (Apec) once each has produced its in-window
+ * {@link CollectedListing}s.
+ *
+ * Side effects:
+ * - `ScrapeRun` (insert): only when `payload.scrapeRunId` is absent. When it
+ *   is provided the row already exists and its `status` is left untouched —
+ *   the orchestrating endpoint rolls per-site outcomes up.
+ * - `Listing` (bulk insert): only when `collected` is non-empty.
+ *
+ * `Listing.excludedByKeyword` is computed here, at write time, rather than
+ * lazily at read time: `context.excludedKeywords` (per-`JobConfig` on the
+ * persisted path, per-run on the anonymous path) is checked against each
+ * collected listing's title via {@link matchExclusionKeywords} right before
+ * the insert, so every inserted row always carries an array (never `null`) —
+ * empty when nothing matched, and also empty when no exclusion keywords were
+ * supplied at all.
+ *
+ * `status` mirrors the pre-refactor behaviour: on the create path it is
+ * `"partial_failure"` when `anyPageExtractionFailed`, else `"completed"`; on
+ * the reuse path it is `null` (the caller owns the run's lifecycle).
+ */
+export async function finalizeScrapeRun({
+  site,
+  payload,
+  context,
+  collected,
+  anyPageExtractionFailed,
+}: {
+  site: Site;
+  payload: ScrapeSitePayload;
+  context: ResolvedScrapeContext;
+  collected: CollectedListing[];
+  anyPageExtractionFailed: boolean;
+}): Promise<RunSiteScrapeResult> {
+  let scrapeRunId: string;
+  let status: RunSiteScrapeResult["status"] = null;
+
+  if (payload.scrapeRunId) {
+    scrapeRunId = payload.scrapeRunId;
+  } else {
+    status = anyPageExtractionFailed ? "partial_failure" : "completed";
+    const [run] = await db
+      .insert(scrapeRun)
+      .values({
+        userId: payload.userId ?? null,
+        lookbackWindowType: context.lookback.type,
+        lookbackSince: context.lookbackSince,
+        modelUsed: payload.model ?? "claude_haiku",
+        sitesIncluded: [site],
+        jobConfigsIncluded: context.resolvedJobConfigId
+          ? [context.resolvedJobConfigId]
+          : [],
+        status,
+      })
+      .returning();
+    scrapeRunId = run.id;
+  }
+
+  if (collected.length > 0) {
+    await db.insert(listing).values(
+      collected.map((item) => ({
+        scrapeRunId,
+        site,
+        title: item.title,
+        company: item.company,
+        companyNormalized: item.companyNormalized,
+        roleCanonical: item.roleCanonical,
+        datePosted: item.datePosted,
+        salaryRaw: item.salaryRaw,
+        url: item.url,
+        excludedByKeyword: matchExclusionKeywords(
+          item.title,
+          context.excludedKeywords,
+        ),
+      })),
+    );
+  }
+
+  return {
+    scrapeRunId,
+    listingCount: collected.length,
+    status,
+    anyPageExtractionFailed,
+  };
+}
+
+/**
+ * The shared body of every Playwright-driven `scrape-<site>` task
+ * (HelloWork today; Apec used this before moving to `runApecApiScrape`):
+ * paginate the site's results with a randomized delay between pages,
+ * structure each page through the extraction adapter, re-attach captured
+ * URLs, keep only listings inside the lookback window, and persist up to
+ * {@link VOLUME_CAP} of them.
+ *
+ * Delegates the shared pre-scrape work to {@link resolveScrapeContext}
+ * (kill-switch short-circuit, payload validation, `JobConfig` / ad-hoc
+ * resolution, lookback coercion) and the shared persistence tail to
+ * {@link finalizeScrapeRun} (`ScrapeRun` create-or-reuse, `Listing` insert).
+ *
+ * Side effects beyond {@link finalizeScrapeRun}'s:
+ * - `SiteStatus` (upsert, via `markSiteFailed`): only when the scrape loop
+ *   throws — a selector timeout, navigation failure, `ScrapeMarkupError`, or
+ *   `ScrapeBlockedError`. A single page's extraction returning `[]` is NOT a
+ *   site failure; it sets `anyPageExtractionFailed` and downgrades the run to
+ *   `partial_failure`.
+ *
+ * `payload.model` selects the extraction adapter via
+ * {@link getExtractionAdapter} and is written to `ScrapeRun.modelUsed`;
+ * omitted defaults to `"claude_haiku"` (Trigger.dev Test tab / standalone
+ * invocation, same testing-convenience pattern as `scrapeRunId`).
+ *
+ * Re-throws after recording the failure so Trigger.dev marks the attempt
+ * failed.
+ */
+export async function runSiteScrape({
+  site,
+  capturePage,
+  payload,
+  extractionAdapter,
+}: RunSiteScrapeOptions): Promise<RunSiteScrapeResult> {
+  const resolution = await resolveScrapeContext(site, payload);
+  if ("killSwitchSkip" in resolution) {
+    return resolution.killSwitchSkip;
+  }
+  const context = resolution.context;
+  const { searchTerm, location, lookback } = context;
 
   const adapter =
     extractionAdapter ?? getExtractionAdapter(payload.model ?? "claude_haiku");
@@ -363,49 +492,11 @@ export async function runSiteScrape({
 
   await browser.close();
 
-  let scrapeRunId: string;
-  let status: RunSiteScrapeResult["status"] = null;
-
-  if (payload.scrapeRunId) {
-    scrapeRunId = payload.scrapeRunId;
-  } else {
-    status = anyPageExtractionFailed ? "partial_failure" : "completed";
-    const [run] = await db
-      .insert(scrapeRun)
-      .values({
-        userId: payload.userId ?? null,
-        lookbackWindowType: lookback.type,
-        lookbackSince,
-        modelUsed: payload.model ?? "claude_haiku",
-        sitesIncluded: [site],
-        jobConfigsIncluded: resolvedJobConfigId ? [resolvedJobConfigId] : [],
-        status,
-      })
-      .returning();
-    scrapeRunId = run.id;
-  }
-
-  if (collected.length > 0) {
-    await db.insert(listing).values(
-      collected.map((item) => ({
-        scrapeRunId,
-        site,
-        title: item.title,
-        company: item.company,
-        companyNormalized: item.companyNormalized,
-        roleCanonical: item.roleCanonical,
-        datePosted: item.datePosted,
-        salaryRaw: item.salaryRaw,
-        url: item.url,
-        excludedByKeyword: matchExclusionKeywords(item.title, excludedKeywords),
-      })),
-    );
-  }
-
-  return {
-    scrapeRunId,
-    listingCount: collected.length,
-    status,
+  return finalizeScrapeRun({
+    site,
+    payload,
+    context,
+    collected,
     anyPageExtractionFailed,
-  };
+  });
 }
