@@ -37,6 +37,28 @@ export class ScrapeMarkupError extends Error {
   }
 }
 
+/**
+ * The search parameters resolved from a payload are unusable before any
+ * network work begins — today that means a blank search term: an empty
+ * `JobConfig.title` / `adHocSearch.title` would otherwise reach each board's
+ * search as `k=` / `motsCles=""` and pull back an unfiltered,
+ * match-everything result set instead of failing (the 2026-09-02 HelloWork
+ * incident — a pre-`7f16ba2` run whose empty `keywords` produced a blank
+ * `k`).
+ *
+ * A caller/config fault, not site drift. Thrown from `resolveScrapeContext`
+ * before Playwright launches and outside the scrape `try`/`catch`, so it
+ * fails the task attempt without touching `SiteStatus` (no `markSiteFailed`,
+ * no `active: false`) — and is deliberately NOT routed through
+ * {@link describeScrapeError}.
+ */
+export class InvalidScrapeConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidScrapeConfigError";
+  }
+}
+
 // Substrings that appear on the common bot-verification / challenge pages
 // these boards sit behind (Cloudflare "Just a moment…", generic
 // "checking your browser" interstitials, Ray ID footers). Matched

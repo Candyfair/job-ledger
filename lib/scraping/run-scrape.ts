@@ -17,7 +17,7 @@ import { matchExclusionKeywords } from "@/lib/filters/exclusion-matching";
 import { sleep, randomDelayMs, SCRAPER_USER_AGENT } from "./politeness";
 import { buildDelimitedContent } from "./delimited-content";
 import { markSiteFailed } from "./site-status";
-import { describeScrapeError } from "./errors";
+import { describeScrapeError, InvalidScrapeConfigError } from "./errors";
 import { isKillSwitchActive } from "./kill-switch";
 
 // SPEC.md §7 — hard ceiling on listings persisted per run, independent of the
@@ -239,6 +239,9 @@ export type ScrapeContextResolution =
  *   `payload.adHocConfig` are set, or when a supplied `jobConfigId` has no
  *   row. `task()` payloads cross a JSON boundary with no schema validation,
  *   so this is an explicit runtime check, not just a type guarantee.
+ * @throws InvalidScrapeConfigError when the resolved search term is blank
+ *   after trimming — a config fault that must fail the run without
+ *   deactivating the site (see the error's doc comment).
  */
 export async function resolveScrapeContext(
   site: Site,
@@ -269,14 +272,30 @@ export async function resolveScrapeContext(
       throw new Error(`JobConfig ${payload.jobConfigId} not found`);
     }
 
-    searchTerm = config.title;
+    searchTerm = config.title.trim();
     excludedKeywords = config.excludedKeywords;
-    location = config.location;
+    location = config.location?.trim() || null;
     resolvedJobConfigId = config.id;
   } else {
-    searchTerm = payload.adHocConfig!.title;
+    searchTerm = payload.adHocConfig!.title.trim();
     excludedKeywords = payload.adHocConfig!.excludedKeywords;
-    location = payload.adHocConfig!.location ?? null;
+    location = payload.adHocConfig!.location?.trim() || null;
+  }
+
+  // The search term is `title` verbatim — Apec `motsCles`, HelloWork `k`.
+  // Every entry point (`/api/job-configs`, `/api/scrape/trigger`) already
+  // rejects a blank title, but a blank one reaching here would be sent as an
+  // empty query and pull back an unfiltered, match-everything result set
+  // rather than failing — exactly the 2026-09-02 HelloWork incident. Fail
+  // loud instead; this is a config fault, so it must not deactivate the site
+  // (thrown before Playwright launches and outside the scrape try/catch, so
+  // `markSiteFailed` is never reached).
+  if (searchTerm === "") {
+    throw new InvalidScrapeConfigError(
+      payload.jobConfigId
+        ? `JobConfig ${payload.jobConfigId} has a blank title — cannot run a site search with an empty query`
+        : "Ad-hoc search has a blank title — cannot run a site search with an empty query",
+    );
   }
 
   const lookback: LookbackWindow =

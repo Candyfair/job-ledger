@@ -4,7 +4,11 @@ import { db } from "@/lib/db";
 import { scrapeRun, listing } from "@/drizzle/schema";
 import { mockDrizzleChain } from "@/lib/test/mock-db";
 import { markSiteFailed } from "./site-status";
-import { ScrapeBlockedError, ScrapeMarkupError } from "./errors";
+import {
+  ScrapeBlockedError,
+  ScrapeMarkupError,
+  InvalidScrapeConfigError,
+} from "./errors";
 import { runSiteScrape, type CaptureSitePage } from "./run-scrape";
 import type { ExtractionAdapter } from "@/lib/extraction/adapter";
 
@@ -387,6 +391,78 @@ describe("runSiteScrape — jobConfigId / adHocConfig exclusivity", () => {
     ).rejects.toThrow(
       "runSiteScrape requires exactly one of payload.jobConfigId or payload.adHocConfig",
     );
+  });
+});
+
+describe("runSiteScrape — blank search term guard", () => {
+  it("rejects a JobConfig with an empty title before launching Playwright, without deactivating the site", async () => {
+    vi.mocked(db.select).mockReturnValue(
+      mockDrizzleChain([{ ...CONFIG, title: "" }]) as never,
+    );
+
+    await expect(
+      runSiteScrape({
+        site: "hellowork",
+        capturePage: onePageCapture,
+        payload: { jobConfigId: "jc-1", lookback: { type: "3d" } },
+        extractionAdapter: adapterReturning([]),
+      }),
+    ).rejects.toThrow(InvalidScrapeConfigError);
+
+    expect(chromium.launch).not.toHaveBeenCalled();
+    expect(onePageCapture).not.toHaveBeenCalled();
+    expect(markSiteFailed).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects a JobConfig whose title is only whitespace", async () => {
+    vi.mocked(db.select).mockReturnValue(
+      mockDrizzleChain([{ ...CONFIG, title: "   " }]) as never,
+    );
+
+    await expect(
+      runSiteScrape({
+        site: "hellowork",
+        capturePage: onePageCapture,
+        payload: { jobConfigId: "jc-1", lookback: { type: "3d" } },
+        extractionAdapter: adapterReturning([]),
+      }),
+    ).rejects.toThrow(InvalidScrapeConfigError);
+    expect(markSiteFailed).not.toHaveBeenCalled();
+  });
+
+  it("rejects an ad-hoc search whose title is only whitespace", async () => {
+    await expect(
+      runSiteScrape({
+        site: "hellowork",
+        capturePage: onePageCapture,
+        payload: {
+          adHocConfig: { title: "   ", excludedKeywords: [] },
+          lookback: { type: "3d" },
+        },
+        extractionAdapter: adapterReturning([]),
+      }),
+    ).rejects.toThrow(InvalidScrapeConfigError);
+    expect(markSiteFailed).not.toHaveBeenCalled();
+  });
+
+  it("trims a padded title before passing it to the site search", async () => {
+    vi.mocked(db.select).mockReturnValue(
+      mockDrizzleChain([{ ...CONFIG, title: "  Développeur  " }]) as never,
+    );
+    const capturePage: CaptureSitePage = vi.fn(async (_page, params) => {
+      expect(params.searchTerm).toBe("Développeur");
+      return { listings: [], hasMore: false };
+    });
+
+    await runSiteScrape({
+      site: "hellowork",
+      capturePage,
+      payload: { jobConfigId: "jc-1", lookback: { type: "3d" } },
+      extractionAdapter: adapterReturning([]),
+    });
+
+    expect(capturePage).toHaveBeenCalled();
   });
 });
 
