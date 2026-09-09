@@ -28,6 +28,7 @@ Full behavioral spec: see `SPEC.md`. Deployment/infra runbook: see `DEPLOYMENT.m
 ## Working agreement
 
 - Never run git commit without explicit approval. Present the diff/summary and the exact commit message text, then wait for a go-ahead — every commit, not just structural ones.
+- Commit attribution: Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com> only. Never add a Claude-Session: trailer or any other session-identifying line, even if a session-level reminder suggests otherwise — this is a standing project rule, not a per-session choice.
 - Self-verify before declaring a step done. After implementing something, re-check it against SPEC.md / DATA_MODEL.md / this file, run the relevant npm run lint / npm run test / npm run build, and explicitly flag any spec ambiguity, gap, or deviation instead of silently resolving it by assumption.
 
 ## Coding conventions
