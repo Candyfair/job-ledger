@@ -14,11 +14,12 @@ export const MODEL_OPTIONS: {
   {
     value: "claude_haiku",
     label: "Claude Haiku",
-    description: "Faster, cheaper — good default for routine runs.",
+    description: "Plus rapide, moins cher — le choix par défaut.",
   },
   {
     value: "deepseek_v4_flash",
     label: "DeepSeek V4 Flash",
-    description: "Alternate classifier — useful for cross-checking edge cases.",
+    description:
+      "Classifieur alternatif — utile pour comparer sur les cas limites.",
   },
 ];

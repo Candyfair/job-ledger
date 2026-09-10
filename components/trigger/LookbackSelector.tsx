@@ -6,9 +6,9 @@
 export type LookbackValue = "24h" | "3d" | { since: string };
 
 const SEGMENTS = [
-  { key: "24h", label: "24 hours" },
-  { key: "3d", label: "3 days" },
-  { key: "since_date", label: "Since date" },
+  { key: "24h", label: "24 heures" },
+  { key: "3d", label: "3 jours" },
+  { key: "since_date", label: "Depuis une date" },
 ] as const;
 
 type Segment = (typeof SEGMENTS)[number]["key"];
@@ -71,7 +71,7 @@ export function LookbackSelector({
           onChange={(e) =>
             onChange(e.target.value ? { since: e.target.value } : null)
           }
-          aria-label="Since date"
+          aria-label="Depuis une date"
           className="w-fit rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
         />
       )}

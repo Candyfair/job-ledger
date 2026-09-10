@@ -1,97 +1,41 @@
-import { redirect } from "next/navigation";
+import { eq } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { jobConfig } from "@/drizzle/schema";
 import { requireSession } from "@/lib/require-session";
-import { getRunHistory } from "@/lib/dashboard/run-history";
-import { getRunStatus } from "@/lib/dashboard/get-run-status";
-import { getOwnedRun } from "@/lib/dashboard/run-ownership";
-import { getListingsPage } from "@/lib/dashboard/listing-query";
-import { encodeCursor } from "@/lib/dashboard/cursor";
-import { DashboardClient } from "@/components/dashboard/DashboardClient";
+import { HomeClient } from "./HomeClient";
 
 /**
- * The dashboard (SPEC.md §1/§3/§6). Two reachable view states — a third,
- * "nothing to show yet", redirects to `/trigger-scrape` instead of rendering
- * here (SPEC.md §3):
+ * The merged trigger / saved-search screen (SPEC.md §3, §6 — replaces the
+ * former separate `/trigger-scrape` and `/settings` routes). Renders for both
+ * authenticated and anonymous visitors: `requireSession()` returning `null`
+ * is an expected branch, not a redirect-to-sign-in case (mirrors how
+ * `POST /api/scrape/trigger` branches on session presence rather than
+ * rejecting anonymous callers).
  *
- * 1. Authenticated with ≥1 `ScrapeRun`: run-history strip (own ScrapeRuns) +
- *    listings for the selected run, or an "all time" aggregate across the
- *    user's own runs when no `?runId=` (or an unowned one) is given.
- * 2. Anonymous + `?runId=` resolving to a `userId IS NULL` run: single-run
- *    view, no history strip, no aggregate.
- *
- * Everything else — authenticated with zero runs, anonymous with no
- * `runId`, or anonymous with a `runId` that doesn't resolve (nonexistent, or
- * belongs to someone else, treated identically so existence is never
- * leaked) — redirects to `/trigger-scrape`, the only place with something
- * for a first-time or run-less visitor to actually do.
- *
- * `requireSession()` returning `null` here is an expected branch, not a
- * redirect-to-sign-in case — same pattern as `app/trigger-scrape/page.tsx`.
+ * Authenticated: the visitor's `JobConfig` rows (for both the pre-checked
+ * scrape selection and inline CRUD). Anonymous: an empty list — the ad hoc
+ * search replaces the job-config section entirely.
  */
-export default async function DashboardPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ runId?: string }>;
-}) {
-  const { runId } = await searchParams;
+export default async function HomePage() {
   const session = await requireSession();
 
-  if (session) {
-    const { runs, nextCursor: runsCursor } = await getRunHistory({
-      userId: session.user.id,
-    });
-
-    if (runs.length === 0) {
-      redirect("/trigger-scrape");
-    }
-
-    let selectedRunId: string | null = null;
-    if (runId) {
-      const owned = await getOwnedRun(runId, session);
-      if (owned) selectedRunId = runId;
-    }
-
-    const { listings, nextCursor: listingsCursor } = await getListingsPage(
-      selectedRunId
-        ? { runId: selectedRunId }
-        : { ownerUserId: session.user.id },
-    );
-
-    return (
-      <DashboardClient
-        // Keyed by the selected run so switching runs remounts the client with
-        // the freshly SSR-fetched, run-scoped listings — its listing state is
-        // seeded from props once and never re-synced in place (SPEC.md §3:
-        // client view state resets on reload anyway).
-        key={selectedRunId ?? "all"}
-        mode="authenticated"
-        initialRuns={runs}
-        initialRunsCursor={encodeCursor(runsCursor)}
-        selectedRunId={selectedRunId}
-        initialListings={listings}
-        initialListingsCursor={encodeCursor(listingsCursor)}
-      />
-    );
-  }
-
-  if (!runId) {
-    redirect("/trigger-scrape");
-  }
-
-  const status = await getRunStatus(runId, null);
-  if (!status) {
-    redirect("/trigger-scrape");
-  }
-
-  const { listings, nextCursor: listingsCursor } = await getListingsPage({
-    runId,
-  });
+  const jobConfigs = session
+    ? await db
+        .select()
+        .from(jobConfig)
+        .where(eq(jobConfig.userId, session.user.id))
+        .orderBy(jobConfig.createdAt)
+    : [];
 
   return (
-    <DashboardClient
-      mode="anonymous-run"
-      initialStatus={status}
-      initialListings={listings}
-      initialListingsCursor={encodeCursor(listingsCursor)}
+    <HomeClient
+      isAuthenticated={session !== null}
+      initialJobConfigs={jobConfigs.map((c) => ({
+        id: c.id,
+        title: c.title,
+        excludedKeywords: c.excludedKeywords,
+        location: c.location,
+      }))}
     />
   );
 }

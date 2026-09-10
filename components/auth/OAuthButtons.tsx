@@ -2,11 +2,10 @@
 
 import { signIn } from "@/lib/auth-client";
 
-// Post-sign-in redirect target is temporarily /settings, not /: the home
-// dashboard doesn't exist yet (Session 5) and landing on the untouched
-// Next.js starter page gives no feedback that sign-in succeeded. Point
-// this back at / once the real dashboard lands.
-const POST_SIGN_IN_REDIRECT = "/settings";
+// Post-sign-in landing: `/`, the merged trigger / saved-search screen
+// (SPEC.md §3, §6). A newly authenticated user with zero JobConfig rows
+// lands directly where they create one.
+const POST_SIGN_IN_REDIRECT = "/";
 
 export function OAuthButtons() {
   return (

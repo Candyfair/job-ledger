@@ -33,8 +33,8 @@ export function AdHocSearchFields({
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm italic text-zinc-600">
-        A one-off search for this run only. Not saved — sign in to save searches
-        for next time.
+        Une recherche ponctuelle, pour ce run uniquement. Non enregistrée —
+        connectez-vous pour retrouver vos recherches la prochaine fois.
       </p>
 
       <div className="flex flex-col gap-1">
@@ -42,13 +42,13 @@ export function AdHocSearchFields({
           htmlFor="ad-hoc-title"
           className="text-xs font-medium tracking-wide text-zinc-600"
         >
-          JOB TITLE
+          INTITULÉ DU POSTE
         </label>
         <input
           id="ad-hoc-title"
           value={values.title}
           onChange={(e) => onChange({ ...values, title: e.target.value })}
-          placeholder="e.g. Senior Frontend Engineer"
+          placeholder="ex. Développeur Frontend Senior"
           className="rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
         />
       </div>
@@ -58,7 +58,7 @@ export function AdHocSearchFields({
           htmlFor="ad-hoc-excluded-keywords"
           className="text-xs font-medium tracking-wide text-zinc-600"
         >
-          EXCLUDED KEYWORDS
+          MOTS-CLÉS À EXCLURE
         </label>
         <input
           id="ad-hoc-excluded-keywords"
@@ -66,7 +66,7 @@ export function AdHocSearchFields({
           onChange={(e) =>
             onChange({ ...values, excludedKeywordsInput: e.target.value })
           }
-          placeholder="e.g. stage, senior, PHP"
+          placeholder="ex. stage, senior, PHP"
           className="rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
         />
       </div>
@@ -76,13 +76,13 @@ export function AdHocSearchFields({
           htmlFor="ad-hoc-location"
           className="text-xs font-medium tracking-wide text-zinc-600"
         >
-          LOCATION
+          LIEU
         </label>
         <input
           id="ad-hoc-location"
           value={values.location}
           onChange={(e) => onChange({ ...values, location: e.target.value })}
-          placeholder="e.g. Paris or Remote"
+          placeholder="ex. Paris ou Télétravail"
           className="rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
         />
       </div>

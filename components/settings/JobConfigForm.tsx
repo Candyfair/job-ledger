@@ -13,8 +13,8 @@ function keywordsToInput(keywords: string[]) {
 }
 
 /** Comma-separated free text → trimmed, non-empty keyword array. Also used
- * by `components/trigger/AdHocSearchFields.tsx` for the anonymous trigger
- * form's Excluded keywords field, which maps to the same shape. */
+ * by the anonymous ad hoc search's excluded-keywords field (`app/HomeClient
+ * .tsx`), which maps to the same shape. */
 export function inputToKeywords(input: string) {
   return input
     .split(",")
@@ -56,13 +56,13 @@ export function JobConfigForm({
           htmlFor="job-config-title"
           className="text-xs font-medium tracking-wide text-zinc-600"
         >
-          JOB TITLE
+          INTITULÉ DU POSTE
         </label>
         <input
           id="job-config-title"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="e.g. Senior Frontend Engineer"
+          placeholder="ex. Développeur Frontend Senior"
           required
           className="rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
         />
@@ -73,13 +73,13 @@ export function JobConfigForm({
           htmlFor="job-config-excluded-keywords"
           className="text-xs font-medium tracking-wide text-zinc-600"
         >
-          EXCLUDED KEYWORDS
+          MOTS-CLÉS À EXCLURE
         </label>
         <input
           id="job-config-excluded-keywords"
           value={excludedKeywordsInput}
           onChange={(e) => setExcludedKeywordsInput(e.target.value)}
-          placeholder="e.g. stage, senior, PHP"
+          placeholder="ex. stage, senior, PHP"
           className="rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
         />
       </div>
@@ -89,13 +89,13 @@ export function JobConfigForm({
           htmlFor="job-config-location"
           className="text-xs font-medium tracking-wide text-zinc-600"
         >
-          LOCATION
+          LIEU
         </label>
         <input
           id="job-config-location"
           value={location}
           onChange={(e) => setLocation(e.target.value)}
-          placeholder="e.g. Paris or Remote"
+          placeholder="ex. Paris ou Télétravail"
           className="rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
         />
       </div>
@@ -106,14 +106,14 @@ export function JobConfigForm({
           disabled={saving}
           className="rounded bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
-          Save
+          Enregistrer
         </button>
         <button
           type="button"
           onClick={onCancel}
           className="rounded border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-900"
         >
-          Cancel
+          Annuler
         </button>
       </div>
     </form>

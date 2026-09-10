@@ -49,7 +49,7 @@ type DashboardClientProps = AuthenticatedProps | AnonymousRunProps;
  * Top-level client component for the two reachable dashboard view states
  * (authenticated with run-history strip, anonymous single-run via
  * `?runId=`) — every other case (no runs, no `runId`, or an unresolved
- * `runId`) redirects to `/trigger-scrape` in `app/page.tsx` before this
+ * `runId`) redirects to `/` in `app/dashboard/page.tsx` before this
  * component ever renders. Owns exclusion-mode/duplicate-expand UI state
  * (client-side only, resets on reload per SPEC.md §3), the "load more"
  * pagination for both runs and listings, and — anonymous mode only —
@@ -153,7 +153,7 @@ export function DashboardClient(props: DashboardClientProps) {
   }
 
   function selectRun(selected: string | null) {
-    router.push(selected ? `/?runId=${selected}` : "/");
+    router.push(selected ? `/dashboard?runId=${selected}` : "/dashboard");
   }
 
   function toggleGroup(primaryId: string) {
@@ -200,10 +200,10 @@ export function DashboardClient(props: DashboardClientProps) {
         <div className="mx-auto flex max-w-4xl items-baseline justify-between">
           <h1 className="text-3xl font-bold text-zinc-900">The Job Ledger</h1>
           <Link
-            href="/trigger-scrape"
+            href="/"
             className="text-xs font-medium tracking-wide text-blue-700 hover:underline"
           >
-            LANCER UN SCRAPING →
+            RELANCER UNE RECHERCHE →
           </Link>
         </div>
       </header>
