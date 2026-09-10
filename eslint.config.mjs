@@ -15,6 +15,9 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     "coverage/**",
+    // Trigger.dev's local build cache (gitignored generated output — bundled
+    // vendor code that trips thousands of rules and is never ours to fix).
+    ".trigger/**",
   ]),
   // JSDoc Tier 1 / Tier 2 enforcement (CLAUDE.md — Documentation (JSDoc)).
   // Scoped to these globs only, never project-wide, so trivial code doesn't
