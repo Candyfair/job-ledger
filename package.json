@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
-    "@trigger.dev/sdk": "^4.5.12",
+    "@trigger.dev/sdk": "4.5.16",
     "better-auth": "^1.7.1",
     "drizzle-orm": "^0.45.2",
     "next": "16.3.2",
@@ -36,7 +36,7 @@
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
-    "@trigger.dev/build": "^4.5.12",
+    "@trigger.dev/build": "4.5.16",
     "@types/node": "^20",
     "@types/pg": "^8.23.1",
     "@types/react": "^19",
