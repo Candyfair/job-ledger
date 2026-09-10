@@ -42,7 +42,28 @@ Global list, shared across all `JobConfig` rows for a given user (or global/anon
 
 One row per triggered run.
 
-- `id`, `userId` (nullable — anonymous runs don't create one at trigger time, but may be attached afterward via the anonymous run-claim flow, SPEC.md §3), `triggeredAt`, `lookbackWindow`, `modelUsed`, `sitesIncluded`, `jobConfigsIncluded`, `status`
+- `id`, `userId` (nullable — anonymous runs don't create one at trigger time, but may be attached afterward via the anonymous run-claim flow, SPEC.md §3), `triggeredAt`, `lookbackWindow`, `modelUsed`, `sitesIncluded`, `jobConfigsIncluded`, `status` (written **only** by the run-status rollup — SPEC.md §4)
+
+## `ScrapeRunSite`
+
+One row per actual Trigger.dev site task — the fan-out unit from SPEC.md §7:
+the cartesian product `sitesIncluded × jobConfigsIncluded` for an authenticated
+run, `sitesIncluded` only for an anonymous one. Pre-created with
+`outcome = 'pending'` by `POST /api/scrape/trigger`, in the same transaction as
+the parent `ScrapeRun`, before any task is enqueued; each task then updates its
+own row and calls the run-status rollup (SPEC.md §4). The rollup combines these
+rows — `combineSiteOutcome` across a site's configs, then `combineRunStatus`
+across sites — into `ScrapeRun.status`.
+
+- `id` (`uuid`, `gen_random_uuid()`)
+- `scrapeRunId` (`uuid`, FK → `scrape_run.id`, `onDelete: cascade`)
+- `site` (`site` enum)
+- `jobConfigId` (`uuid`, nullable — `null` for anonymous runs; FK → `job_config.id`, `onDelete: cascade`, so deleting a config drops its granular per-run trace while `ScrapeRun.status` — persisted independently — is unaffected)
+- `outcome` (`scrape_run_site_outcome` enum: `pending` | `completed` | `empty_extraction` | `failed` | `skipped`; default `pending`)
+- `failureCause` (`site_failure_cause` enum, nullable — set only when `outcome = 'failed'`: `markup_broken` / `bot_challenge` from the scrape itself, `timeout` from the stale-run watchdog for a task that died without reporting)
+- `listingCount` (`integer`, default `0`)
+- `updatedAt` (`timestamp`)
+- Unique `(scrapeRunId, site, jobConfigId)`
 
 ## `Listing`
 
@@ -65,5 +86,7 @@ User 1─N JobConfig
 User 1─N ExclusionKeyword
 User 1─N ScrapeRun (nullable — anonymous runs have no User at creation; may gain one later via claim, SPEC.md §3)
 ScrapeRun 1─N Listing
+ScrapeRun 1─N ScrapeRunSite (one row per (site, jobConfigId) task; jobConfigId nullable)
+JobConfig 1─N ScrapeRunSite (nullable — null for anonymous runs)
 Listing 0─1 Listing (self-reference, duplicateOfListingId)
 ```

@@ -51,7 +51,7 @@ TypeScript already documents shapes — JSDoc here is for intent, rationale, and
 
 Three tiers, matching the priority already set by decision #1:
 
-- **Tier 1 — required, full documentation**: `/lib/filters`, `/lib/dedup`, `/lib/extraction`, `/lib/scraping`. Deterministic logic and LLM adapters — document the contract, non-obvious behavior, and known gotchas (e.g. Trigger.dev payload fields crossing a JSON serialization boundary arrive as strings, not typed values — see the `since: Date` fix in `scrape-apec.ts`).
+- **Tier 1 — required, full documentation**: `/lib/filters`, `/lib/dedup`, `/lib/extraction`, `/lib/scraping`, `/lib/run-status`. Deterministic logic and LLM adapters — document the contract, non-obvious behavior, and known gotchas (e.g. Trigger.dev payload fields crossing a JSON serialization boundary arrive as strings, not typed values — see the `since: Date` fix in `scrape-apec.ts`).
 - **Tier 2 — required, lighter**: `/trigger`, `/app/api`. Document side effects (which tables a task writes to, under what conditions) and failure paths, not every parameter.
 - **Tier 3 — case by case**: React components. Only when behavior isn't obvious from props/name (e.g. a multi-state toggle).
 
