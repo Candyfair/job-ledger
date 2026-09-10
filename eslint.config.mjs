@@ -28,6 +28,7 @@ const eslintConfig = defineConfig([
       "lib/dedup/**",
       "lib/extraction/**",
       "lib/scraping/**",
+      "lib/run-status/**",
       "trigger/**",
       "app/api/**",
     ],
