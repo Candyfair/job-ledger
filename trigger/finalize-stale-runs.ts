@@ -1,11 +1,12 @@
 import { schedules } from "@trigger.dev/sdk/v3";
 import { and, eq, lt } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { scrapeRun } from "@/drizzle/schema";
+import { scrapeRun, scrapeRunSite } from "@/drizzle/schema";
+import { recomputeAndWriteRunStatus } from "@/lib/run-status";
 
 /**
- * A run still `running` this long after `triggeredAt` is treated as having
- * never reported back. 15 minutes sits above the global Trigger.dev
+ * A run still `running` this long after `triggeredAt` is treated as having a
+ * task that never reported back. 15 minutes sits above the global Trigger.dev
  * `maxDuration: 600` (10 min) task ceiling in `trigger.config.ts` — any site
  * task that was going to finish, throw, or be SIGKILLed at the ceiling has
  * already done so — plus a margin for queue wait and the final DB write.
@@ -13,30 +14,35 @@ import { scrapeRun } from "@/drizzle/schema";
 const STALE_AFTER_MS = 15 * 60 * 1000;
 
 interface FinalizeStaleRunsResult {
-  /** Number of `scrape_run` rows moved from `running` to `partial_failure`. */
+  /** Number of `scrape_run` rows the recompute moved off `running`. */
   finalized: number;
 }
 
 /**
- * Watchdog for the `ScrapeRun.status` rollup gap (SPEC.md §9, derived-status
- * blind spot #1): no writer moves a run off its `"running"` default on the
- * production multi-site fan-out path, so a run whose site tasks crashed
- * ("System failure"), were SIGKILLed at `maxDuration`, or were skipped by the
- * kill switch stays `running` in the raw column forever and the dashboard
- * shows it as in-progress indefinitely.
+ * Backstop for the run-status rollup (SPEC.md §4/§9). The rollup relies on
+ * every site task writing its own `ScrapeRunSite` row and then calling
+ * `recomputeAndWriteRunStatus`. A task that crashed ("System failure"), was
+ * SIGKILLed at `maxDuration`, or otherwise died leaves its row stuck at
+ * `outcome = 'pending'` — and `combineRunStatus` reads any `pending` as
+ * `running`, so the run would show as in-progress forever.
  *
- * This is deliberately NOT the run-status rollup designed in SPEC.md §4/§7:
- * it never inspects per-site outcomes and never yields `completed`. It only
- * forces a conservative terminal state — any run still `running` after
- * {@link STALE_AFTER_MS} becomes `partial_failure`, because a run that never
- * reported back is not a clean success. When the real rollup lands it will
- * write the status before this sweep ever sees the row, and this becomes a
- * no-op.
+ * This sweep finds every run still `running` past {@link STALE_AFTER_MS},
+ * flips its remaining `pending` `ScrapeRunSite` rows to
+ * `outcome = 'failed'`, `failureCause = 'timeout'` (the orphaned-task cause —
+ * never a `SiteStatus` flip, an orphaned task is not a site-wide fault), and
+ * then calls `recomputeAndWriteRunStatus` like every other write path. It
+ * does **not** write `scrape_run.status` itself —
+ * `recomputeAndWriteRunStatus` stays the single writer of that column.
  *
- * Side effect: a single `UPDATE scrape_run SET status = 'partial_failure'`
- * over the rows matching `status = 'running' AND triggered_at < now -
- * STALE_AFTER_MS`. No other table, no other column. Idempotent — once the
- * backlog is drained, repeated runs update nothing.
+ * A run whose tasks all genuinely finished has no `pending` rows left, so its
+ * recompute is a no-op and it is untouched. When every site task reports
+ * promptly this sweep finalizes nothing.
+ *
+ * Side effects, per stale run: one
+ * `UPDATE scrape_run_site SET outcome='failed', failure_cause='timeout'`
+ * over that run's `pending` rows, then one `recomputeAndWriteRunStatus`
+ * (which may `UPDATE scrape_run.status`). Idempotent — once a run is off
+ * `running` it no longer matches.
  *
  * @param now - injectable clock for tests; defaults to the real current time.
  */
@@ -45,15 +51,34 @@ export async function finalizeStaleRuns(
 ): Promise<FinalizeStaleRunsResult> {
   const cutoff = new Date(now.getTime() - STALE_AFTER_MS);
 
-  const updated = await db
-    .update(scrapeRun)
-    .set({ status: "partial_failure" })
+  const staleRuns = await db
+    .select({ id: scrapeRun.id })
+    .from(scrapeRun)
     .where(
       and(eq(scrapeRun.status, "running"), lt(scrapeRun.triggeredAt, cutoff)),
-    )
-    .returning({ id: scrapeRun.id });
+    );
 
-  return { finalized: updated.length };
+  let finalized = 0;
+  for (const { id } of staleRuns) {
+    await db
+      .update(scrapeRunSite)
+      .set({
+        outcome: "failed",
+        failureCause: "timeout",
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(scrapeRunSite.scrapeRunId, id),
+          eq(scrapeRunSite.outcome, "pending"),
+        ),
+      );
+
+    const status = await recomputeAndWriteRunStatus(id);
+    if (status !== "running") finalized += 1;
+  }
+
+  return { finalized };
 }
 
 /**
@@ -72,7 +97,7 @@ export const finalizeStaleRunsSchedule = schedules.task({
     const result = await finalizeStaleRuns();
     if (result.finalized > 0) {
       console.warn(
-        `finalize-stale-runs: forced ${result.finalized} stale run(s) to partial_failure`,
+        `finalize-stale-runs: forced ${result.finalized} stale run(s) off "running" via the rollup`,
       );
     }
     return result;
