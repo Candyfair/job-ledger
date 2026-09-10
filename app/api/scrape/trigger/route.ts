@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { and, eq, inArray } from "drizzle-orm";
 import { tasks } from "@trigger.dev/sdk/v3";
 import { db } from "@/lib/db";
-import { jobConfig, scrapeRun } from "@/drizzle/schema";
+import { jobConfig, scrapeRun, scrapeRunSite } from "@/drizzle/schema";
 import { requireSession } from "@/lib/require-session";
 import { checkTriggerRateLimit } from "@/lib/rate-limit/trigger-rate-limit";
 import { isKillSwitchActive } from "@/lib/scraping/kill-switch";
@@ -79,11 +79,17 @@ function triggerSiteTask(site: Site, payload: ScrapeSitePayload) {
  * (none of the supplied ids belong to the caller) is a 400. This mirrors how
  * a stale id in a multi-select would age out of an owner's own list.
  *
- * Side effects: `RateLimitCounter` upsert (via `checkTriggerRateLimit`);
- * `ScrapeRun` insert on success; one Trigger.dev task enqueued per fan-out
- * unit above (each task independently writes `Listing` rows and may upsert
- * `SiteStatus` — see `runSiteScrape`). Task completion is never awaited —
- * this only waits for Trigger.dev to acknowledge the enqueue.
+ * Side effects: `RateLimitCounter` upsert (via `checkTriggerRateLimit`); on
+ * success, in one transaction, a `ScrapeRun` insert plus one
+ * `ScrapeRunSite` row (`outcome: "pending"`) per fan-out unit — this fixes
+ * the run's full expected site×`JobConfig` membership before any task runs,
+ * so the run-status rollup (SPEC.md §4) has a reliable "at least one
+ * pending" signal without counting in-flight tasks. Then one Trigger.dev
+ * task is enqueued per fan-out unit (each task independently writes
+ * `Listing` rows, updates its own `ScrapeRunSite` row, and may upsert
+ * `SiteStatus` — see `runSiteScrape`). This is upfront bookkeeping only:
+ * task completion is never awaited — the endpoint only waits for Trigger.dev
+ * to acknowledge the enqueue.
  *
  * The kill switch (`isKillSwitchActive`) is checked before the rate limit
  * and before any database access — an operator-initiated stop takes
@@ -202,17 +208,42 @@ export async function POST(request: Request) {
     };
   }
 
-  const [run] = await db
-    .insert(scrapeRun)
-    .values({
-      userId: session ? session.user.id : null,
-      lookbackWindowType: lookback.type,
-      lookbackSince: lookback.type === "since_date" ? lookback.since : null,
-      modelUsed: parsedModel,
-      sitesIncluded: parsedSites,
-      jobConfigsIncluded: resolvedJobConfigIds,
-    })
-    .returning();
+  // One transaction: the ScrapeRun row and one pending ScrapeRunSite row per
+  // (site, jobConfigId) pair about to be dispatched — the cartesian product
+  // for an authenticated run, one row per site (jobConfigId null) for an
+  // anonymous one. Committed before any task is enqueued; no task result is
+  // awaited here.
+  const run = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(scrapeRun)
+      .values({
+        userId: session ? session.user.id : null,
+        lookbackWindowType: lookback.type,
+        lookbackSince: lookback.type === "since_date" ? lookback.since : null,
+        modelUsed: parsedModel,
+        sitesIncluded: parsedSites,
+        jobConfigsIncluded: resolvedJobConfigIds,
+      })
+      .returning();
+
+    const siteRows = session
+      ? parsedSites.flatMap((site) =>
+          resolvedJobConfigIds.map((jobConfigId) => ({
+            scrapeRunId: created.id,
+            site,
+            jobConfigId,
+          })),
+        )
+      : parsedSites.map((site) => ({
+          scrapeRunId: created.id,
+          site,
+          jobConfigId: null,
+        }));
+
+    await tx.insert(scrapeRunSite).values(siteRows);
+
+    return created;
+  });
 
   const basePayload = {
     lookback,

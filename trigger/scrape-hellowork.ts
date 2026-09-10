@@ -13,7 +13,9 @@ import { captureHelloworkPage } from "@/lib/scraping/hellowork-scraper";
  *
  * Side effects (via `runSiteScrape`): `SiteStatus` upsert on a Playwright /
  * bot-challenge failure; `ScrapeRun` insert unless `payload.scrapeRunId` is
- * supplied; `Listing` bulk insert when in-window results are found.
+ * supplied; `Listing` bulk insert when in-window results are found; this
+ * task's own `ScrapeRunSite` row is written and `ScrapeRun.status` is
+ * recomputed (run-status rollup, SPEC.md §4).
  *
  * `queue.concurrencyLimit: 1` gives HelloWork the "limited per-site
  * concurrency" politeness guarantee (SPEC.md §7) — runs against HelloWork

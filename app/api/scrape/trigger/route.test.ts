@@ -4,11 +4,21 @@ import { POST } from "./route";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/require-session";
 import { checkTriggerRateLimit } from "@/lib/rate-limit/trigger-rate-limit";
+import { scrapeRun, scrapeRunSite } from "@/drizzle/schema";
 import { mockDrizzleChain } from "@/lib/test/mock-db";
 
-vi.mock("@/lib/db", () => ({
-  db: { select: vi.fn(), insert: vi.fn() },
-}));
+vi.mock("@/lib/db", () => {
+  const dbMock: Record<string, unknown> = {
+    select: vi.fn(),
+    insert: vi.fn(),
+  };
+  // The ScrapeRun + pending ScrapeRunSite inserts run in one transaction; the
+  // tx handle shares `db`'s query surface in these tests.
+  dbMock.transaction = vi.fn(async (cb: (tx: unknown) => unknown) =>
+    cb(dbMock),
+  );
+  return { db: dbMock };
+});
 
 vi.mock("@/lib/require-session", () => ({
   requireSession: vi.fn(),
@@ -306,5 +316,76 @@ describe("POST /api/scrape/trigger — kill switch", () => {
     expect(checkTriggerRateLimit).not.toHaveBeenCalled();
     expect(db.insert).not.toHaveBeenCalled();
     expect(tasks.trigger).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/scrape/trigger — ScrapeRunSite pre-creation (SPEC.md §4)", () => {
+  it("inserts one pending row per resolved (site, jobConfig) pair, in a transaction, before any task", async () => {
+    vi.mocked(requireSession).mockResolvedValue(authSession as never);
+    vi.mocked(db.select).mockReturnValue(
+      mockDrizzleChain([{ id: "jc-1" }, { id: "jc-2" }]) as never,
+    );
+    const insertChain = mockDrizzleChain([{ id: "run-1" }]);
+    vi.mocked(db.insert).mockReturnValue(insertChain as never);
+
+    const res = await POST(
+      triggerRequest({
+        lookbackWindow: "24h",
+        sites: ["apec", "hellowork"],
+        model: "claude_haiku",
+        jobConfigIds: ["jc-1", "jc-2"],
+      }),
+    );
+
+    expect(res.status).toBe(201);
+
+    // Both inserts went through the transaction handle.
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+    const insertedTables = vi.mocked(db.insert).mock.calls.map((c) => c[0]);
+    expect(insertedTables).toEqual([scrapeRun, scrapeRunSite]);
+
+    // The site rows: full 2×2 cartesian product, all implicitly pending
+    // (outcome defaulted by the column).
+    const siteRows = insertChain.values.mock.calls
+      .map((c) => c[0])
+      .find((arg): arg is Record<string, unknown>[] => Array.isArray(arg));
+    expect(siteRows).toEqual(
+      expect.arrayContaining([
+        { scrapeRunId: "run-1", site: "apec", jobConfigId: "jc-1" },
+        { scrapeRunId: "run-1", site: "apec", jobConfigId: "jc-2" },
+        { scrapeRunId: "run-1", site: "hellowork", jobConfigId: "jc-1" },
+        { scrapeRunId: "run-1", site: "hellowork", jobConfigId: "jc-2" },
+      ]),
+    );
+    expect(siteRows).toHaveLength(4);
+
+    // Transaction committed before the first task was enqueued.
+    expect(vi.mocked(db.transaction).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(tasks.trigger).mock.invocationCallOrder[0],
+    );
+  });
+
+  it("inserts one pending row per site with jobConfigId null for an anonymous run", async () => {
+    vi.mocked(requireSession).mockResolvedValue(null);
+    const insertChain = mockDrizzleChain([{ id: "run-9" }]);
+    vi.mocked(db.insert).mockReturnValue(insertChain as never);
+
+    const res = await POST(
+      triggerRequest({
+        lookbackWindow: "3d",
+        sites: ["apec", "hellowork"],
+        model: "claude_haiku",
+        adHocSearch: { title: "Dev" },
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    const siteRows = insertChain.values.mock.calls
+      .map((c) => c[0])
+      .find((arg): arg is Record<string, unknown>[] => Array.isArray(arg));
+    expect(siteRows).toEqual([
+      { scrapeRunId: "run-9", site: "apec", jobConfigId: null },
+      { scrapeRunId: "run-9", site: "hellowork", jobConfigId: null },
+    ]);
   });
 });

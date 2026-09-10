@@ -5,6 +5,7 @@ import { mockDrizzleChain } from "@/lib/test/mock-db";
 import { markSiteFailed } from "./site-status";
 import { ScrapeBlockedError, ScrapeMarkupError } from "./errors";
 import { runApecApiScrape } from "./run-apec-api";
+import { writeSiteOutcome, recomputeAndWriteRunStatus } from "@/lib/run-status";
 import { resolveApecLocation } from "./apec-location";
 import type { fetchApecResultsPage } from "./apec-api";
 import type {
@@ -14,6 +15,11 @@ import type {
 
 vi.mock("@/lib/db", () => ({ db: { select: vi.fn(), insert: vi.fn() } }));
 vi.mock("./site-status", () => ({ markSiteFailed: vi.fn() }));
+// The run-status rollup has its own dedicated tests (lib/run-status/*).
+vi.mock("@/lib/run-status", () => ({
+  writeSiteOutcome: vi.fn(),
+  recomputeAndWriteRunStatus: vi.fn(async () => "completed"),
+}));
 vi.mock("./apec-location", () => ({ resolveApecLocation: vi.fn() }));
 // No real inter-page delay in tests.
 vi.mock("./politeness", () => ({
@@ -101,6 +107,16 @@ describe("runApecApiScrape — happy path", () => {
       listingCount: 1,
       status: "completed",
     });
+    expect(writeSiteOutcome).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        scrapeRunId: "run-1",
+        site: "apec",
+        outcome: "completed",
+        listingCount: 1,
+      }),
+    );
+    expect(recomputeAndWriteRunStatus).toHaveBeenCalledWith("run-1");
 
     const rows = insertChain.values.mock.calls
       .map((c) => c[0])
@@ -219,6 +235,9 @@ describe("runApecApiScrape — location unresolved", () => {
       code: null,
       reason: "no_match",
     });
+    vi.mocked(recomputeAndWriteRunStatus).mockResolvedValueOnce(
+      "partial_failure",
+    );
     const fetchPage = pageFetcher([]);
 
     const result = await runApecApiScrape({
@@ -234,6 +253,11 @@ describe("runApecApiScrape — location unresolved", () => {
     expect(result.listingCount).toBe(0);
     expect(result.note).toContain("Paris");
     expect(result.note).toContain("Apec");
+    // The unresolved-location skip records an empty_extraction outcome.
+    expect(writeSiteOutcome).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ outcome: "empty_extraction", listingCount: 0 }),
+    );
     expect(vi.mocked(db.insert).mock.calls.map((c) => c[0])).not.toContain(
       listing,
     );
@@ -285,12 +309,57 @@ describe("runApecApiScrape — failure mapping", () => {
       expect.any(String),
     );
   });
+
+  it("records a failed ScrapeRunSite row + recompute only when scrapeRunId is present", async () => {
+    const boom = () => {
+      throw new ScrapeMarkupError("shape drift");
+    };
+
+    // Standalone (no scrapeRunId): SiteStatus only.
+    await expect(
+      runApecApiScrape({
+        site: "apec",
+        payload: { jobConfigId: "jc-1", lookback: { type: "3d" } },
+        extractionAdapter: adapter(),
+        fetchPage: vi.fn(boom) as unknown as typeof fetchApecResultsPage,
+      }),
+    ).rejects.toBeInstanceOf(ScrapeMarkupError);
+    expect(writeSiteOutcome).not.toHaveBeenCalled();
+    expect(recomputeAndWriteRunStatus).not.toHaveBeenCalled();
+
+    // Orchestrated (scrapeRunId present): also records the failed row.
+    await expect(
+      runApecApiScrape({
+        site: "apec",
+        payload: {
+          jobConfigId: "jc-1",
+          lookback: { type: "3d" },
+          scrapeRunId: "run-7",
+        },
+        extractionAdapter: adapter(),
+        fetchPage: vi.fn(boom) as unknown as typeof fetchApecResultsPage,
+      }),
+    ).rejects.toBeInstanceOf(ScrapeMarkupError);
+    expect(writeSiteOutcome).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        scrapeRunId: "run-7",
+        jobConfigId: "jc-1",
+        outcome: "failed",
+        failureCause: "markup_broken",
+      }),
+    );
+    expect(recomputeAndWriteRunStatus).toHaveBeenCalledWith("run-7");
+  });
 });
 
 describe("runApecApiScrape — role canonicalization degradation", () => {
   it("still inserts listings but downgrades the run when canonicalizeRoles wholesale-fails", async () => {
     const insertChain = mockDrizzleChain([{ id: "run-1" }]);
     vi.mocked(db.insert).mockReturnValue(insertChain as never);
+    vi.mocked(recomputeAndWriteRunStatus).mockResolvedValueOnce(
+      "partial_failure",
+    );
 
     const result = await runApecApiScrape({
       site: "apec",
@@ -301,6 +370,12 @@ describe("runApecApiScrape — role canonicalization degradation", () => {
 
     expect(result.listingCount).toBe(1);
     expect(result.status).toBe("partial_failure");
+    // Degraded extraction with rows still written -> empty_extraction outcome
+    // (which combineRunStatus turns into partial_failure).
+    expect(writeSiteOutcome).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ outcome: "empty_extraction", listingCount: 1 }),
+    );
 
     const rows = insertChain.values.mock.calls
       .map((c) => c[0])
@@ -311,6 +386,8 @@ describe("runApecApiScrape — role canonicalization degradation", () => {
 
 describe("runApecApiScrape — ScrapeRun lifecycle", () => {
   it("reuses a supplied scrapeRunId and does not insert a scrape_run row", async () => {
+    vi.mocked(recomputeAndWriteRunStatus).mockResolvedValueOnce("running");
+
     const result = await runApecApiScrape({
       site: "apec",
       payload: {
@@ -324,8 +401,9 @@ describe("runApecApiScrape — ScrapeRun lifecycle", () => {
 
     expect(result).toMatchObject({
       scrapeRunId: "existing-run",
-      status: null,
+      status: "running",
     });
+    expect(recomputeAndWriteRunStatus).toHaveBeenCalledWith("existing-run");
     const insertedTables = vi.mocked(db.insert).mock.calls.map((c) => c[0]);
     expect(insertedTables).toContain(listing);
     expect(insertedTables).not.toContain(scrapeRun);
@@ -333,6 +411,9 @@ describe("runApecApiScrape — ScrapeRun lifecycle", () => {
 
   it("skips everything and records a partial_failure run when the kill switch is active", async () => {
     process.env.SCRAPING_KILL_SWITCH = "true";
+    vi.mocked(recomputeAndWriteRunStatus).mockResolvedValueOnce(
+      "partial_failure",
+    );
     const fetchPage = pageFetcher([]);
 
     const result = await runApecApiScrape({

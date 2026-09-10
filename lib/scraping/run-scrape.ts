@@ -14,10 +14,19 @@ import {
   type LookbackWindow,
 } from "@/lib/extraction/lookback-window";
 import { matchExclusionKeywords } from "@/lib/filters/exclusion-matching";
+import {
+  writeSiteOutcome,
+  recomputeAndWriteRunStatus,
+  type ScrapeRunStatus,
+} from "@/lib/run-status";
 import { sleep, randomDelayMs, SCRAPER_USER_AGENT } from "./politeness";
 import { buildDelimitedContent } from "./delimited-content";
 import { markSiteFailed } from "./site-status";
-import { describeScrapeError, InvalidScrapeConfigError } from "./errors";
+import {
+  describeScrapeError,
+  InvalidScrapeConfigError,
+  type SiteFailureCause,
+} from "./errors";
 import { isKillSwitchActive } from "./kill-switch";
 
 // SPEC.md §7 — hard ceiling on listings persisted per run, independent of the
@@ -112,9 +121,13 @@ export type CollectedListing = {
 export interface RunSiteScrapeResult {
   scrapeRunId: string;
   listingCount: number;
-  /** The status this task wrote, or `null` on the reuse path where the
-   * orchestrating endpoint owns the run's lifecycle. */
-  status: "completed" | "partial_failure" | null;
+  /** The run's status immediately after this task's `ScrapeRunSite` write and
+   * the ensuing {@link recomputeAndWriteRunStatus}. May still be `"running"`
+   * when sibling tasks in the same fan-out haven't reported yet — this task
+   * never owns the run's lifecycle, it only contributes one row. Informational
+   * (task results are not awaited anywhere); the authoritative value lives on
+   * `ScrapeRun.status`. */
+  status: ScrapeRunStatus;
   anyPageExtractionFailed: boolean;
   /** Present only when a site contributed nothing for a reason worth
    * surfacing to the operator (e.g. Apec's location string didn't resolve).
@@ -132,24 +145,24 @@ export interface RunSiteScrapeResult {
  * look at it," and an operator-initiated stop is neither, so recording it
  * there would mislead an admin reading the settings page later.
  *
- * The two branches are not symmetric, on purpose:
- * - `payload.scrapeRunId` absent: this task is about to create its own
- *   `ScrapeRun` row, so there is no contention — writing
- *   `status: "partial_failure"` here is a normal, self-contained insert,
- *   the same shape as the existing `completed`/`partial_failure` decision
- *   below for a non-killed run.
- * - `payload.scrapeRunId` present: the row is shared with sibling tasks
- *   from the same fan-out (SPEC.md §7 — one task per (site, jobConfig)
- *   pair against one `ScrapeRun`). No code path writes to an existing
- *   run's `status` today — not on success, not on `markup_broken` /
- *   `bot_challenge` — because nothing yet reconciles per-site outcomes
- *   into a final value (`GET /api/scrape/status/:runId`, SPEC.md §7, is
- *   spec'd but unbuilt). Writing `partial_failure` straight into that
- *   column here would be the first such write, and nothing would ever
- *   correct it even if every sibling site went on to succeed. So this
- *   branch leaves `ScrapeRun.status` untouched — same as the other
- *   failure causes — and only `console.warn`s, matching the existing
- *   soft-signal convention in `hellowork-scraper.ts`.
+ * Both branches now go through the run-status rollup identically (SPEC.md §4,
+ * §9 — this supersedes the earlier asymmetry where the shared-`ScrapeRun`
+ * branch only `console.warn`ed and left `ScrapeRun.status` untouched, the
+ * Session 6 gap): write `outcome: "skipped"` on this task's own
+ * `ScrapeRunSite` row, then delegate to {@link recomputeAndWriteRunStatus}.
+ * `combineRunStatus` turns an all-`skipped` run into `partial_failure`, and a
+ * `skipped` alongside a sibling `completed` into `completed`.
+ *
+ * - `payload.scrapeRunId` present (orchestrated fan-out): the `ScrapeRunSite`
+ *   row was pre-created `pending` by `POST /api/scrape/trigger` and keyed on
+ *   `payload.jobConfigId` — {@link writeSiteOutcome} UPDATEs that exact row.
+ *   `payload.jobConfigId` comes straight off this task's own payload; the kill
+ *   switch only skips the *`JobConfig` record* lookup, not knowledge of which
+ *   id this task was dispatched for.
+ * - `payload.scrapeRunId` absent (standalone Test-tab / script): still create
+ *   a single-site `ScrapeRun` (so the result carries a real id, existing
+ *   behavior) but leave `status` at its `"running"` default — recompute
+ *   resolves it to `partial_failure`.
  */
 async function recordKillSwitchSkip(
   site: Site,
@@ -160,40 +173,70 @@ async function recordKillSwitchSkip(
       ? { type: "since_date", since: new Date(payload.lookback.since) }
       : payload.lookback;
 
+  let scrapeRunId: string;
   if (payload.scrapeRunId) {
-    console.warn(
-      `Kill switch active — skipping ${site} for ScrapeRun ${payload.scrapeRunId}`,
-    );
-
-    return {
-      scrapeRunId: payload.scrapeRunId,
-      listingCount: 0,
-      status: null,
-      anyPageExtractionFailed: false,
-    };
+    scrapeRunId = payload.scrapeRunId;
+  } else {
+    const [run] = await db
+      .insert(scrapeRun)
+      .values({
+        userId: payload.userId ?? null,
+        lookbackWindowType: lookback.type,
+        lookbackSince: lookback.type === "since_date" ? lookback.since : null,
+        modelUsed: payload.model ?? "claude_haiku",
+        sitesIncluded: [site],
+        // The kill switch trips before the JobConfig lookup runs, so there is
+        // no resolved id to record here even when payload.jobConfigId was set.
+        jobConfigsIncluded: [],
+        // status left at its "running" default — recompute writes it below.
+      })
+      .returning();
+    scrapeRunId = run.id;
   }
 
-  const [run] = await db
-    .insert(scrapeRun)
-    .values({
-      userId: payload.userId ?? null,
-      lookbackWindowType: lookback.type,
-      lookbackSince: lookback.type === "since_date" ? lookback.since : null,
-      modelUsed: payload.model ?? "claude_haiku",
-      sitesIncluded: [site],
-      // The kill switch trips before the JobConfig lookup runs, so there is
-      // no resolved id to record here even when payload.jobConfigId was set.
-      jobConfigsIncluded: [],
-      status: "partial_failure",
-    })
-    .returning();
+  await writeSiteOutcome(db, {
+    scrapeRunId,
+    site,
+    jobConfigId: payload.jobConfigId ?? null,
+    outcome: "skipped",
+  });
+  const status = await recomputeAndWriteRunStatus(scrapeRunId);
 
   return {
-    scrapeRunId: run.id,
+    scrapeRunId,
     listingCount: 0,
-    status: "partial_failure",
+    status,
     anyPageExtractionFailed: false,
   };
+}
+
+/**
+ * Records a site task's failure on its own `ScrapeRunSite` row and refreshes
+ * the run status — the run-status-rollup counterpart to {@link markSiteFailed}'s
+ * global `SiteStatus` write. Call it right after `markSiteFailed` in a scrape
+ * catch block.
+ *
+ * No-op when the task has no `payload.scrapeRunId` (standalone Test-tab /
+ * `scripts/test-scrape-*` invocation): the failure path writes no `Listing`
+ * rows, so there is no parent-run FK forcing a `ScrapeRun` to exist, and one
+ * created solely to carry a `partial_failure` would be an orphan that no
+ * consumer ever reads (SPEC.md §9). `payload.jobConfigId` (not any resolved
+ * id) keys the pre-created row.
+ */
+export async function recordSiteFailure(
+  site: Site,
+  payload: ScrapeSitePayload,
+  failureCause: SiteFailureCause,
+): Promise<void> {
+  if (!payload.scrapeRunId) return;
+  await writeSiteOutcome(db, {
+    scrapeRunId: payload.scrapeRunId,
+    site,
+    jobConfigId: payload.jobConfigId ?? null,
+    outcome: "failed",
+    failureCause,
+  });
+  await recomputeAndWriteRunStatus(payload.scrapeRunId);
 }
 
 /**
@@ -324,10 +367,21 @@ export async function resolveScrapeContext(
  * {@link CollectedListing}s.
  *
  * Side effects:
- * - `ScrapeRun` (insert): only when `payload.scrapeRunId` is absent. When it
- *   is provided the row already exists and its `status` is left untouched —
- *   the orchestrating endpoint rolls per-site outcomes up.
+ * - `ScrapeRun` (insert): only when `payload.scrapeRunId` is absent, and
+ *   always with `status` at its `"running"` default — this function never
+ *   writes `ScrapeRun.status` directly (see below).
  * - `Listing` (bulk insert): only when `collected` is non-empty.
+ * - `ScrapeRunSite` (one row UPDATE, or INSERT on the standalone create
+ *   path): this task's own outcome —
+ *   `"empty_extraction"` when `anyPageExtractionFailed` or zero listings
+ *   landed, else `"completed"` — plus `listingCount`. Lock-free (unique key
+ *   per task).
+ * - `ScrapeRun.status` (at most one UPDATE): only via
+ *   {@link recomputeAndWriteRunStatus}, which this function calls after the
+ *   `ScrapeRunSite` write. Individual tasks never touch `ScrapeRun.status`
+ *   themselves — they write their own `ScrapeRunSite` row (which never
+ *   conflicts with a sibling task) and delegate to that shared function, the
+ *   sole writer and the only place taking the run's row lock.
  *
  * `Listing.excludedByKeyword` is computed here, at write time, rather than
  * lazily at read time: `context.excludedKeywords` (per-`JobConfig` on the
@@ -337,9 +391,8 @@ export async function resolveScrapeContext(
  * empty when nothing matched, and also empty when no exclusion keywords were
  * supplied at all.
  *
- * `status` mirrors the pre-refactor behaviour: on the create path it is
- * `"partial_failure"` when `anyPageExtractionFailed`, else `"completed"`; on
- * the reuse path it is `null` (the caller owns the run's lifecycle).
+ * `RunSiteScrapeResult.status` is the run status right after the recompute —
+ * possibly still `"running"` if sibling tasks haven't reported.
  */
 export async function finalizeScrapeRun({
   site,
@@ -359,12 +412,10 @@ export async function finalizeScrapeRun({
   note?: string;
 }): Promise<RunSiteScrapeResult> {
   let scrapeRunId: string;
-  let status: RunSiteScrapeResult["status"] = null;
 
   if (payload.scrapeRunId) {
     scrapeRunId = payload.scrapeRunId;
   } else {
-    status = anyPageExtractionFailed ? "partial_failure" : "completed";
     const [run] = await db
       .insert(scrapeRun)
       .values({
@@ -376,7 +427,7 @@ export async function finalizeScrapeRun({
         jobConfigsIncluded: context.resolvedJobConfigId
           ? [context.resolvedJobConfigId]
           : [],
-        status,
+        // status left at its "running" default — recompute writes it below.
       })
       .returning();
     scrapeRunId = run.id;
@@ -402,6 +453,18 @@ export async function finalizeScrapeRun({
     );
   }
 
+  await writeSiteOutcome(db, {
+    scrapeRunId,
+    site,
+    jobConfigId: payload.jobConfigId ?? null,
+    outcome:
+      anyPageExtractionFailed || collected.length === 0
+        ? "empty_extraction"
+        : "completed",
+    listingCount: collected.length,
+  });
+  const status = await recomputeAndWriteRunStatus(scrapeRunId);
+
   return {
     scrapeRunId,
     listingCount: collected.length,
@@ -424,12 +487,18 @@ export async function finalizeScrapeRun({
  * resolution, lookback coercion) and the shared persistence tail to
  * {@link finalizeScrapeRun} (`ScrapeRun` create-or-reuse, `Listing` insert).
  *
- * Side effects beyond {@link finalizeScrapeRun}'s:
- * - `SiteStatus` (upsert, via `markSiteFailed`): only when the scrape loop
- *   throws — a selector timeout, navigation failure, `ScrapeMarkupError`, or
- *   `ScrapeBlockedError`. A single page's extraction returning `[]` is NOT a
- *   site failure; it sets `anyPageExtractionFailed` and downgrades the run to
- *   `partial_failure`.
+ * Side effects beyond {@link finalizeScrapeRun}'s: when the scrape loop
+ * throws (selector timeout, navigation failure, `ScrapeMarkupError`,
+ * `ScrapeBlockedError`) —
+ * - `SiteStatus` (upsert, via `markSiteFailed`): global per-site deactivation.
+ * - `ScrapeRunSite` + `ScrapeRun.status` (via {@link recordSiteFailure}):
+ *   only when `payload.scrapeRunId` is set — writes this task's row
+ *   `outcome: "failed"` + `failureCause`, then recomputes the run status.
+ *   The standalone path (no `scrapeRunId`) records nothing here.
+ *
+ * A single page's extraction returning `[]` is NOT a site failure; it sets
+ * `anyPageExtractionFailed`, which {@link finalizeScrapeRun} maps to an
+ * `"empty_extraction"` outcome (→ `partial_failure` at the run level).
  *
  * `payload.model` selects the extraction adapter via
  * {@link getExtractionAdapter} and is written to `ScrapeRun.modelUsed`;
@@ -516,6 +585,7 @@ export async function runSiteScrape({
     await browser.close();
     const { cause, note } = describeScrapeError(error, site);
     await markSiteFailed(site, cause, note);
+    await recordSiteFailure(site, payload, cause);
     throw error;
   }
 

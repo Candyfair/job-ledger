@@ -10,7 +10,15 @@ import {
   InvalidScrapeConfigError,
 } from "./errors";
 import { runSiteScrape, type CaptureSitePage } from "./run-scrape";
+import { writeSiteOutcome, recomputeAndWriteRunStatus } from "@/lib/run-status";
 import type { ExtractionAdapter } from "@/lib/extraction/adapter";
+
+// The run-status rollup has its own dedicated tests (lib/run-status/*); here
+// we only assert this task delegates to it with the right per-task row.
+vi.mock("@/lib/run-status", () => ({
+  writeSiteOutcome: vi.fn(),
+  recomputeAndWriteRunStatus: vi.fn(async () => "completed"),
+}));
 
 const browserClose = vi.fn();
 
@@ -107,6 +115,43 @@ describe("runSiteScrape — failure path", () => {
       expect.stringContaining("Apec.fr"),
     );
     expect(db.insert).not.toHaveBeenCalled();
+    // Standalone failure path (no scrapeRunId): SiteStatus only — no
+    // ScrapeRunSite row, no run created, no recompute.
+    expect(writeSiteOutcome).not.toHaveBeenCalled();
+    expect(recomputeAndWriteRunStatus).not.toHaveBeenCalled();
+  });
+
+  it("records a failed ScrapeRunSite row and recomputes when a scrapeRunId is present", async () => {
+    const capturePage: CaptureSitePage = vi.fn(async () => {
+      throw new ScrapeBlockedError("challenge");
+    });
+
+    await expect(
+      runSiteScrape({
+        site: "apec",
+        capturePage,
+        payload: {
+          jobConfigId: "jc-1",
+          lookback: { type: "3d" },
+          scrapeRunId: "run-7",
+        },
+        extractionAdapter: adapterReturning([]),
+      }),
+    ).rejects.toThrow(ScrapeBlockedError);
+
+    expect(markSiteFailed).toHaveBeenCalled();
+    expect(writeSiteOutcome).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        scrapeRunId: "run-7",
+        site: "apec",
+        jobConfigId: "jc-1",
+        outcome: "failed",
+        failureCause: "bot_challenge",
+      }),
+    );
+    expect(recomputeAndWriteRunStatus).toHaveBeenCalledWith("run-7");
+    expect(db.insert).not.toHaveBeenCalled();
   });
 
   it("marks the site as markup_broken and re-throws on a generic selector error", async () => {
@@ -150,9 +195,24 @@ describe("runSiteScrape — ScrapeRun reuse vs create", () => {
     const insertedTables = vi.mocked(db.insert).mock.calls.map((c) => c[0]);
     expect(insertedTables).toContain(scrapeRun);
     expect(insertedTables).toContain(listing);
+
+    // Own ScrapeRunSite row (completed, 1 listing) then a recompute.
+    expect(writeSiteOutcome).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        scrapeRunId: "run-1",
+        site: "apec",
+        jobConfigId: "jc-1",
+        outcome: "completed",
+        listingCount: 1,
+      }),
+    );
+    expect(recomputeAndWriteRunStatus).toHaveBeenCalledWith("run-1");
   });
 
   it("reuses the supplied ScrapeRun id and does not insert a scrape_run row", async () => {
+    vi.mocked(recomputeAndWriteRunStatus).mockResolvedValueOnce("running");
+
     const result = await runSiteScrape({
       site: "apec",
       capturePage: onePageCapture,
@@ -167,15 +227,25 @@ describe("runSiteScrape — ScrapeRun reuse vs create", () => {
     expect(result).toMatchObject({
       scrapeRunId: "existing-run",
       listingCount: 1,
-      status: null,
+      // Whatever the recompute reported — still "running" if siblings are
+      // pending. This task never owns the run's lifecycle.
+      status: "running",
     });
 
     const insertedTables = vi.mocked(db.insert).mock.calls.map((c) => c[0]);
     expect(insertedTables).toContain(listing);
     expect(insertedTables).not.toContain(scrapeRun);
+    expect(writeSiteOutcome).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        scrapeRunId: "existing-run",
+        outcome: "completed",
+      }),
+    );
+    expect(recomputeAndWriteRunStatus).toHaveBeenCalledWith("existing-run");
   });
 
-  it("does not insert listings when nothing lands in the lookback window", async () => {
+  it("does not insert listings, and records empty_extraction, when nothing lands in the lookback window", async () => {
     const stale = [{ ...oneExtractedEntry[0], datePosted: "2020-01-01" }];
 
     const result = await runSiteScrape({
@@ -189,6 +259,10 @@ describe("runSiteScrape — ScrapeRun reuse vs create", () => {
     const insertedTables = vi.mocked(db.insert).mock.calls.map((c) => c[0]);
     expect(insertedTables).toContain(scrapeRun);
     expect(insertedTables).not.toContain(listing);
+    expect(writeSiteOutcome).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ outcome: "empty_extraction", listingCount: 0 }),
+    );
   });
 });
 
@@ -562,10 +636,13 @@ describe("runSiteScrape — kill switch", () => {
     }
   });
 
-  it("skips scraping entirely and creates a partial_failure ScrapeRun when scrapeRunId is absent", async () => {
+  it("creates a single-site ScrapeRun (status left to recompute) and a skipped row when scrapeRunId is absent", async () => {
     process.env.SCRAPING_KILL_SWITCH = "true";
     const insertChain = mockDrizzleChain([{ id: "run-1" }]);
     vi.mocked(db.insert).mockReturnValue(insertChain as never);
+    vi.mocked(recomputeAndWriteRunStatus).mockResolvedValueOnce(
+      "partial_failure",
+    );
 
     const result = await runSiteScrape({
       site: "apec",
@@ -584,20 +661,29 @@ describe("runSiteScrape — kill switch", () => {
     expect(onePageCapture).not.toHaveBeenCalled();
     expect(markSiteFailed).not.toHaveBeenCalled();
     expect(db.insert).toHaveBeenCalledWith(scrapeRun);
+    // The insert no longer stamps a status — recompute owns that column.
     expect(insertChain.values).toHaveBeenCalledWith(
+      expect.not.objectContaining({ status: expect.anything() }),
+    );
+    expect(writeSiteOutcome).toHaveBeenCalledWith(
+      db,
       expect.objectContaining({
-        status: "partial_failure",
-        sitesIncluded: ["apec"],
+        scrapeRunId: "run-1",
+        site: "apec",
+        jobConfigId: "jc-1",
+        outcome: "skipped",
       }),
     );
+    expect(recomputeAndWriteRunStatus).toHaveBeenCalledWith("run-1");
     expect(vi.mocked(db.insert).mock.calls.map((c) => c[0])).not.toContain(
       listing,
     );
   });
 
-  it("leaves an already-queued task's shared ScrapeRun untouched and only warns, without touching SiteStatus", async () => {
+  it("updates the shared run's own pending ScrapeRunSite row to skipped (Session 6 fix), never writing ScrapeRun.status directly", async () => {
     process.env.SCRAPING_KILL_SWITCH = "true";
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(recomputeAndWriteRunStatus).mockResolvedValueOnce("running");
 
     const result = await runSiteScrape({
       site: "hellowork",
@@ -613,16 +699,25 @@ describe("runSiteScrape — kill switch", () => {
     expect(result).toEqual({
       scrapeRunId: "existing-run",
       listingCount: 0,
-      status: null,
+      status: "running",
       anyPageExtractionFailed: false,
     });
-    expect(warnSpy).toHaveBeenCalledTimes(1);
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("existing-run"),
+    // Targets its own pre-created row by the payload's real jobConfigId — not
+    // a hardcoded null that would miss it and leave it stuck pending.
+    expect(writeSiteOutcome).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        scrapeRunId: "existing-run",
+        site: "hellowork",
+        jobConfigId: "jc-1",
+        outcome: "skipped",
+      }),
     );
+    expect(recomputeAndWriteRunStatus).toHaveBeenCalledWith("existing-run");
     expect(chromium.launch).not.toHaveBeenCalled();
     expect(onePageCapture).not.toHaveBeenCalled();
     expect(markSiteFailed).not.toHaveBeenCalled();
+    // No ScrapeRun insert on the shared path, and no direct status write.
     expect(db.insert).not.toHaveBeenCalled();
     expect(db.update).toBeUndefined();
 

@@ -12,8 +12,10 @@ import { runApecApiScrape } from "@/lib/scraping/run-apec-api";
  * Side effects (via `runApecApiScrape`): `SiteStatus` upsert on a transport
  * failure / bot challenge / response-shape drift; `ScrapeRun` insert unless
  * `payload.scrapeRunId` is supplied; `Listing` bulk insert when in-window
- * results are found. A location string that doesn't resolve to an Apec
- * `lieuId` downgrades the run to `partial_failure` with an operator-facing
+ * results are found; this task's own `ScrapeRunSite` row is written and
+ * `ScrapeRun.status` is recomputed (run-status rollup, SPEC.md §4). A
+ * location string that doesn't resolve to an Apec `lieuId` records an
+ * `"empty_extraction"` outcome (→ `partial_failure`) with an operator-facing
  * note — never a `SiteStatus` flip.
  *
  * `queue.concurrencyLimit: 1` gives Apec the "limited per-site concurrency"

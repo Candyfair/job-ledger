@@ -9,6 +9,7 @@ import { sleep, randomDelayMs } from "./politeness";
 import {
   resolveScrapeContext,
   finalizeScrapeRun,
+  recordSiteFailure,
   VOLUME_CAP,
   type ScrapeSitePayload,
   type CollectedListing,
@@ -70,14 +71,18 @@ interface RunApecApiScrapeOptions {
  * is a guard against a bad `totalCount`, nothing more.
  *
  * Side effects:
- * - `SiteStatus` (upsert, via `markSiteFailed`): only when
- *   {@link fetchApecResultsPage} throws — a `ScrapeBlockedError`
- *   (`bot_challenge`) or anything else, including a Zod response-shape
- *   failure (`markup_broken`). Re-thrown so Trigger.dev marks the attempt
- *   failed. A wholesale `canonicalizeRoles` failure is NOT a site failure —
- *   it degrades `roleCanonical` to `null` and downgrades the run to
- *   `partial_failure`, listings still persist.
- * - `ScrapeRun` / `Listing`: via {@link finalizeScrapeRun}.
+ * - `SiteStatus` (upsert, via `markSiteFailed`) and, when
+ *   `payload.scrapeRunId` is set, this task's `ScrapeRunSite` row
+ *   (`outcome: "failed"`) + a run-status recompute (via
+ *   {@link recordSiteFailure}): only when {@link fetchApecResultsPage}
+ *   throws — a `ScrapeBlockedError` (`bot_challenge`) or anything else,
+ *   including a Zod response-shape failure (`markup_broken`). Re-thrown so
+ *   Trigger.dev marks the attempt failed. A wholesale `canonicalizeRoles`
+ *   failure is NOT a site failure — it degrades `roleCanonical` to `null`
+ *   and, via `anyPageExtractionFailed`, makes {@link finalizeScrapeRun}
+ *   record an `"empty_extraction"` outcome (→ `partial_failure`); listings
+ *   still persist.
+ * - `ScrapeRun` / `ScrapeRunSite` / `Listing`: via {@link finalizeScrapeRun}.
  */
 export async function runApecApiScrape({
   site,
@@ -161,6 +166,7 @@ export async function runApecApiScrape({
   } catch (error) {
     const { cause, note } = describeScrapeError(error, site);
     await markSiteFailed(site, cause, note);
+    await recordSiteFailure(site, payload, cause);
     throw error;
   }
 
