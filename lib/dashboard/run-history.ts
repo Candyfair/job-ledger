@@ -1,10 +1,10 @@
 import { and, desc, eq, inArray, lt, or } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { scrapeRun, listing, siteStatus } from "@/drizzle/schema";
+import { scrapeRun, listing, scrapeRunSite } from "@/drizzle/schema";
 import {
-  deriveRunStatus,
+  assembleRunStatus,
   type RunStatusPayload,
-} from "@/lib/dashboard/derive-run-status";
+} from "@/lib/dashboard/assemble-run-status";
 
 export type RunHistoryCursor = { triggeredAt: string; id: string };
 export type RunHistoryEntry = RunStatusPayload;
@@ -57,20 +57,20 @@ export async function getRunHistory({
   }
 
   const runIds = page.map((r) => r.id);
-  const allSites = [...new Set(page.flatMap((r) => r.sitesIncluded))];
 
-  const [allListings, statuses] = await Promise.all([
+  const [allListings, allSiteRows] = await Promise.all([
     db.select().from(listing).where(inArray(listing.scrapeRunId, runIds)),
-    allSites.length > 0
-      ? db.select().from(siteStatus).where(inArray(siteStatus.site, allSites))
-      : Promise.resolve([]),
+    db
+      .select()
+      .from(scrapeRunSite)
+      .where(inArray(scrapeRunSite.scrapeRunId, runIds)),
   ]);
 
   const runs = page.map((run) =>
-    deriveRunStatus({
+    assembleRunStatus({
       run,
+      siteRows: allSiteRows.filter((r) => r.scrapeRunId === run.id),
       listings: allListings.filter((l) => l.scrapeRunId === run.id),
-      siteStatuses: statuses,
     }),
   );
 

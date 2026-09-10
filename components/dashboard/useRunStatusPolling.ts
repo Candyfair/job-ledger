@@ -1,18 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { RunStatusPayload } from "@/lib/dashboard/derive-run-status";
+import type { RunStatusPayload } from "@/lib/dashboard/assemble-run-status";
 
 // Deliberate choice (SPEC.md's brief asked for "3-5s, flag it, don't bury
 // it") — middle of that range.
 const POLL_INTERVAL_MS = 4000;
-// Independent safety cutoff so a client never polls forever even if this
-// constant and the server's own STALE_TIMEOUT_MS (see derive-run-status.ts)
-// ever drift apart.
+// Independent client-side safety cutoff so a run whose tasks never report
+// back (and which the `finalize-stale-runs` watchdog only resolves ~15 min
+// later, server-side) doesn't keep a browser tab polling indefinitely.
 const MAX_POLL_DURATION_MS = 12 * 60 * 1000;
 
 /**
- * Polls `GET /api/scrape/status/:runId` only while the run's derived status
+ * Polls `GET /api/scrape/status/:runId` only while the run's persisted status
  * is `"running"`, stopping the moment a poll resolves to a terminal status
  * or the safety cutoff elapses. Pass `null` for either argument to disable
  * polling entirely (e.g. the authenticated dashboard, which doesn't live-

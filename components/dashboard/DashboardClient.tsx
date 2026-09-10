@@ -23,7 +23,7 @@ import {
 } from "@/lib/dashboard/format-relative-date";
 import type { ListingDTO } from "@/lib/dashboard/listing-query";
 import type { RunHistoryEntry } from "@/lib/dashboard/run-history";
-import type { RunStatusPayload } from "@/lib/dashboard/derive-run-status";
+import type { RunStatusPayload } from "@/lib/dashboard/assemble-run-status";
 import { SITES, SITE_LABELS } from "@/lib/sites";
 import { MODEL_OPTIONS } from "@/lib/extraction/model-options";
 

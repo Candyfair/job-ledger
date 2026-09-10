@@ -1,13 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useRunStatusPolling } from "./useRunStatusPolling";
-import type { RunStatusPayload } from "@/lib/dashboard/derive-run-status";
+import type { RunStatusPayload } from "@/lib/dashboard/assemble-run-status";
 
 function makeStatus(overrides: Partial<RunStatusPayload>): RunStatusPayload {
   return {
     runId: "run-1",
     status: "running",
-    statusBasis: "derived",
     triggeredAt: "2026-08-21T09:00:00.000Z",
     model: "claude_haiku",
     sitesIncluded: ["apec"],

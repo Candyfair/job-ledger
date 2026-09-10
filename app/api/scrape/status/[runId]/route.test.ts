@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { GET } from "./route";
 import { requireSession } from "@/lib/require-session";
 import { getRunStatus } from "@/lib/dashboard/get-run-status";
-import type { RunStatusPayload } from "@/lib/dashboard/derive-run-status";
+import type { RunStatusPayload } from "@/lib/dashboard/assemble-run-status";
 
 vi.mock("@/lib/require-session", () => ({
   requireSession: vi.fn(),
@@ -17,7 +17,6 @@ const session = { user: { id: "user-1" } };
 const payload: RunStatusPayload = {
   runId: "run-1",
   status: "running",
-  statusBasis: "derived",
   triggeredAt: "2026-08-21T09:00:00.000Z",
   model: "claude_haiku",
   sitesIncluded: ["apec"],
