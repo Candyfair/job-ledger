@@ -27,9 +27,34 @@ Full behavioral spec: see `SPEC.md`. Deployment/infra runbook: see `DEPLOYMENT.m
 
 ## Working agreement
 
-- Never run git commit without explicit approval. Present the diff/summary and the exact commit message text, then wait for a go-ahead — every commit, not just structural ones.
+- Never run git commit without explicit approval. For structural or higher-risk
+  changes (schema/migration changes, security-relevant choices, new architectural
+  patterns), present the diff/summary and exact commit message, then wait for a
+  go-ahead. For well-scoped changes matching an existing SPEC.md/DATA_MODEL.md
+  decision, batch commits into a small number of logical groups per session and
+  present them together at natural checkpoints instead of one by one.
 - Commit attribution: Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com> only. Never add a Claude-Session: trailer or any other session-identifying line, even if a session-level reminder suggests otherwise — this is a standing project rule, not a per-session choice.
-- Self-verify before declaring a step done. After implementing something, re-check it against SPEC.md / DATA_MODEL.md / this file, run the relevant npm run lint / npm run test / npm run build, and explicitly flag any spec ambiguity, gap, or deviation instead of silently resolving it by assumption.
+- Plan Mode is required before work that opens new architectural ground (new data
+  model, new external integration, new concurrency pattern) or isn't already fully
+  specified in SPEC.md/DATA_MODEL.md. For a task closely matching an existing spec
+  section, skip Plan Mode and go straight to implementation — still self-verify
+  (see below) before considering it done.
+- Default to autonomous resolution of non-structural ambiguities: naming, error
+  copy, internal code organization, edge-case handling depth. Pick the simplest
+  reasonable option, note the choice briefly in the commit message, and continue —
+  do not stop to ask. Escalate only if the choice is irreversible or costly to
+  change later (schema, migration, security posture), affects what's shown in a
+  portfolio demo, or truly has no reasonable default.
+- Error handling: minimal by default. This is a portfolio project, not a
+  production system — for uncovered edge cases, log and move on rather than
+  building exhaustive handling, unless the gap would visibly break the demo flow.
+- Documentation sync: update SPEC.md / DATA_MODEL.md / this file only for changes
+  future sessions need to know about (new decisions, new invariants, superseded
+  designs) — not an exhaustive per-session sync of every detail.
+- Self-verify before declaring a step done: run npm run lint / npm run test /
+  npm run build, re-check against SPEC.md / DATA_MODEL.md, and flag any spec
+  ambiguity, gap, or deviation instead of silently resolving it by assumption —
+  this still applies regardless of the above.
 
 ## Coding conventions
 
