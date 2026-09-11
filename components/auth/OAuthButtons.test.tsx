@@ -22,7 +22,7 @@ describe("OAuthButtons", () => {
     );
   });
 
-  it("carries the runId as a claimRunId query param for both providers", () => {
+  it("carries the runId as a claimRunId query param on /dashboard for both providers", () => {
     render(<OAuthButtons runId="run-42" />);
 
     fireEvent.click(
@@ -34,11 +34,15 @@ describe("OAuthButtons", () => {
 
     expect(social).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ callbackURL: "/?claimRunId=run-42" }),
+      expect.objectContaining({
+        callbackURL: "/dashboard?claimRunId=run-42",
+      }),
     );
     expect(social).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ callbackURL: "/?claimRunId=run-42" }),
+      expect.objectContaining({
+        callbackURL: "/dashboard?claimRunId=run-42",
+      }),
     );
   });
 });

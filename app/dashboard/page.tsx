@@ -1,6 +1,9 @@
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/require-session";
-import { getRunHistory } from "@/lib/dashboard/run-history";
+import {
+  getRunHistory,
+  INITIAL_RUN_HISTORY_PAGE_SIZE,
+} from "@/lib/dashboard/run-history";
 import { getRunStatus } from "@/lib/dashboard/get-run-status";
 import { getOwnedRun } from "@/lib/dashboard/run-ownership";
 import { getListingsPage } from "@/lib/dashboard/listing-query";
@@ -33,17 +36,27 @@ import { DashboardClient } from "@/components/dashboard/DashboardClient";
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ runId?: string }>;
+  searchParams: Promise<{ runId?: string; claimRunId?: string }>;
 }) {
-  const { runId } = await searchParams;
+  const { runId, claimRunId } = await searchParams;
   const session = await requireSession();
 
   if (session) {
     const { runs, nextCursor: runsCursor } = await getRunHistory({
       userId: session.user.id,
+      limit: INITIAL_RUN_HISTORY_PAGE_SIZE,
     });
 
-    if (runs.length === 0) {
+    // A freshly authenticated visitor claiming an anonymous run (SPEC.md §3
+    // "Create an account from an anonymous run", `OAuthButtons`'
+    // `/dashboard?claimRunId=` landing, decided 2026-09-11) has zero owned
+    // runs at this exact SSR pass — the claim itself only completes
+    // client-side, after mount (`RunClaimOnMount`). Bouncing to `/` here
+    // would drop `claimRunId` (a bare `redirect("/")` carries no query
+    // string) and the claim would never fire. Render the empty shell
+    // instead; `RunClaimOnMount` re-navigates to the claimed run once the
+    // claim persists.
+    if (runs.length === 0 && !claimRunId) {
       redirect("/");
     }
 

@@ -50,8 +50,10 @@ function lookbackLabel(value: LookbackValue | null): string {
  * and either ≥1 checked job config or a valid ad hoc search), mirroring the
  * route's own 400 conditions so an empty selection never round-trips.
  *
- * On success it redirects to the dashboard (SPEC.md §3 step 4): `/dashboard`
- * for an authenticated run, `/dashboard?runId=<id>` for an anonymous one, so
+ * On success it redirects to `/dashboard?runId=<id>` (SPEC.md §3 step 4,
+ * updated 2026-09-11 — both authenticated and anonymous runs now land
+ * selected on their own run rather than the authenticated "all time"
+ * aggregate, which gave no way to tell which listings were new), so
  * progress is picked up by the dashboard's status banner.
  */
 export function HomeClient({
@@ -182,9 +184,7 @@ export function HomeClient({
         return;
       }
 
-      router.push(
-        isAuthenticated ? "/dashboard" : `/dashboard?runId=${data.runId}`,
-      );
+      router.push(`/dashboard?runId=${data.runId}`);
     } catch {
       setSubmitError("Une erreur est survenue lors du lancement du scraping.");
       setSubmitting(false);

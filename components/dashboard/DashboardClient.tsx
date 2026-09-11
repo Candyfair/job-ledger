@@ -90,11 +90,12 @@ export function DashboardClient(props: DashboardClientProps) {
 
   // The run the status banner/polling track. Anonymous: always the single
   // `?runId=` run. Authenticated: the selected run — or, with nothing
-  // selected (the all-time aggregate), the most recent one. That fallback
-  // matters because the post-trigger redirect for an authenticated run is
-  // bare `/dashboard` (SPEC.md §3 step 4, no `?runId=`, unlike the anonymous
-  // redirect) — without it, a visitor landing on the all-time view right
-  // after triggering would never see progress on the run they just started.
+  // selected (the all-time aggregate), the most recent one. The post-trigger
+  // redirect always carries `?runId=` now (SPEC.md §3 step 4, 2026-09-11),
+  // so a freshly triggered run arrives with `selectedRunId` already set —
+  // this fallback is now just a general safety net for a visitor who
+  // navigates to bare `/dashboard` (header wordmark, "Relancer une
+  // recherche") while one of their own runs happens to still be running.
   const bannerRunId =
     props.mode === "anonymous-run"
       ? props.initialStatus.runId
@@ -226,11 +227,6 @@ export function DashboardClient(props: DashboardClientProps) {
     [visibleListings],
   );
 
-  const excludedCount =
-    exclusionMode === "hidden" ? 0 : listings.filter(isExcluded).length;
-  const duplicateGroupCount = groups.filter(
-    (g) => g.duplicates.length > 0,
-  ).length;
   // Rows actually on screen: one per group, plus a group's folded duplicates
   // only while it is expanded. Not `visibleListings.length`, which also counts
   // duplicates that render inside their primary's group rather than as a row.
@@ -241,6 +237,41 @@ export function DashboardClient(props: DashboardClientProps) {
       (expandedGroupIds.has(group.primary.id) ? group.duplicates.length : 0),
     0,
   );
+  const renderedExcludedCount =
+    exclusionMode === "hidden" ? 0 : listings.filter(isExcluded).length;
+  const renderedDuplicateGroupCount = groups.filter(
+    (g) => g.duplicates.length > 0,
+  ).length;
+
+  // The toolbar summary's figures. Prefer the run-status payload's
+  // authoritative kept/excluded/duplicateGroups — computed server-side over
+  // the run's *entire* Listing set (`lib/dashboard/assemble-run-status.ts`)
+  // — over the numbers above whenever a single run is in view and its
+  // status is known. `listings` itself is paginated (50/page, see
+  // `lib/dashboard/listing-query.ts`), so a count derived only from what's
+  // been fetched so far silently under-reports until every page has been
+  // loaded via "Charger plus" — this previously disagreed with the banner's
+  // own "N annonces conservées" for that exact same run (fixed 2026-09-11).
+  // No such authoritative total exists for the "all time" aggregate (it
+  // spans every one of the user's runs), so that view keeps the
+  // listings-derived numbers.
+  const authoritativeCounts =
+    scopedRunId && currentRunSummary && currentRunSummary.runId === scopedRunId
+      ? currentRunSummary
+      : null;
+  const totalAnnoncesCount = authoritativeCounts
+    ? exclusionMode === "hidden"
+      ? authoritativeCounts.kept
+      : authoritativeCounts.kept + authoritativeCounts.excluded
+    : renderedRowCount;
+  const excludedCount = authoritativeCounts
+    ? exclusionMode === "hidden"
+      ? 0
+      : authoritativeCounts.excluded
+    : renderedExcludedCount;
+  const duplicateGroupCount = authoritativeCounts
+    ? authoritativeCounts.duplicateGroups
+    : renderedDuplicateGroupCount;
   const lastWriteIso = listings[0]?.createdAt ?? null;
 
   return (
@@ -300,7 +331,7 @@ export function DashboardClient(props: DashboardClientProps) {
 
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <p className="text-sm text-zinc-600">
-            {renderedRowCount} annonces · {excludedCount} exclues ·{" "}
+            {totalAnnoncesCount} annonces · {excludedCount} exclues ·{" "}
             {duplicateGroupCount} groupes de doublons · triées du plus récent
           </p>
           <div className="hidden md:block">

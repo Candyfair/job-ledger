@@ -29,7 +29,7 @@ describe("RunClaimOnMount", () => {
     expect(replace).not.toHaveBeenCalled();
   });
 
-  it("posts the claim and strips claimRunId from the URL", async () => {
+  it("posts the claim, awaits it, then strips claimRunId and selects the claimed run", async () => {
     searchParamsValue.current = new URLSearchParams({
       claimRunId: "run-42",
       other: "kept",
@@ -46,6 +46,19 @@ describe("RunClaimOnMount", () => {
         }),
       ),
     );
-    expect(replace).toHaveBeenCalledWith("/dashboard?other=kept");
+    await waitFor(() =>
+      expect(replace).toHaveBeenCalledWith(
+        "/dashboard?other=kept&runId=run-42",
+      ),
+    );
+  });
+
+  it("strips claimRunId without selecting a run when the claim fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
+    searchParamsValue.current = new URLSearchParams({ claimRunId: "run-42" });
+
+    render(<RunClaimOnMount />);
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/dashboard"));
   });
 });

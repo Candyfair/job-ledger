@@ -192,7 +192,7 @@ describe("DashboardClient — status banner (authenticated, SPEC.md §3 2026-09-
     };
   }
 
-  it("falls back to the latest run when nothing is selected and it's running — the post-trigger redirect (bare /dashboard) has no ?runId=", () => {
+  it("falls back to the latest run when nothing is selected and it's running — e.g. a visitor on bare /dashboard while one of their own runs is still in flight", () => {
     const latest = makeRun({ runId: "run-latest", status: "running" });
 
     render(
@@ -292,5 +292,61 @@ describe("DashboardClient — anonymous run claim prompt (SPEC.md §3 2026-09-07
     expect(
       screen.queryByText("Créez un compte pour sauvegarder cette recherche."),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("DashboardClient — toolbar counts align with the run status (2026-09-11)", () => {
+  function makeRun(overrides: Partial<RunHistoryEntry>): RunHistoryEntry {
+    return {
+      runId: "run-x",
+      status: "completed",
+      triggeredAt: "2026-09-10T09:00:00.000Z",
+      model: "claude_haiku",
+      sitesIncluded: ["apec"],
+      sites: [],
+      kept: 0,
+      excluded: 0,
+      duplicateGroups: 0,
+      ...overrides,
+    };
+  }
+
+  it("uses the run status's kept/excluded/duplicateGroups instead of only what's been paginated in, for a single run in view", () => {
+    render(
+      <DashboardClient
+        mode="authenticated"
+        initialRuns={[makeRun({ kept: 100, excluded: 3, duplicateGroups: 2 })]}
+        initialRunsCursor={null}
+        selectedRunId="run-x"
+        // Only one listing loaded so far (the SSR page is 50 at a time) —
+        // the toolbar should still reflect the run's real totals (kept +
+        // excluded in the default "folded" mode, which shows both), not
+        // "1 annonces".
+        initialListings={[keptListing]}
+        initialListingsCursor="cursor-1"
+      />,
+    );
+
+    // A single combined match — the run-history strip below also renders
+    // its own "N exclues" per entry, so a bare /3 exclues/ query would match
+    // both.
+    expect(
+      screen.getByText(/103 annonces · 3 exclues · 2 groupes de doublons/),
+    ).toBeInTheDocument();
+  });
+
+  it("falls back to the listings-derived counts for the all-time aggregate, which has no single authoritative total", () => {
+    render(
+      <DashboardClient
+        mode="authenticated"
+        initialRuns={[makeRun({ kept: 100 })]}
+        initialRunsCursor={null}
+        selectedRunId={null}
+        initialListings={[keptListing]}
+        initialListingsCursor={null}
+      />,
+    );
+
+    expect(screen.getByText(/1 annonces/)).toBeInTheDocument();
   });
 });

@@ -31,7 +31,7 @@ beforeEach(() => {
 });
 
 describe("HomeClient — authenticated trigger", () => {
-  it("renders the saved-searches checklist pre-checked and posts jobConfigIds, then redirects to /dashboard", async () => {
+  it("renders the saved-searches checklist pre-checked and posts jobConfigIds, then redirects to the triggered run's dashboard", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ runId: "run-1" }));
 
     render(
@@ -48,7 +48,7 @@ describe("HomeClient — authenticated trigger", () => {
     fireEvent.click(submitButton());
 
     await waitFor(() => {
-      expect(push).toHaveBeenCalledWith("/dashboard");
+      expect(push).toHaveBeenCalledWith("/dashboard?runId=run-1");
     });
 
     const [, init] = vi.mocked(fetch).mock.calls[0];

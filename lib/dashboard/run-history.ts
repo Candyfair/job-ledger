@@ -12,6 +12,14 @@ export type RunHistoryEntry = RunStatusPayload;
 const PAGE_SIZE = 20;
 
 /**
+ * The strip's *initial* page size (SPEC.md §6/§7, decided 2026-09-11) — the
+ * SSR call in `app/dashboard/page.tsx` passes this explicitly; `GET
+ * /api/scrape/runs` ("load more") keeps using the larger `PAGE_SIZE` above
+ * for every page after the first, unaffected by this cap.
+ */
+export const INITIAL_RUN_HISTORY_PAGE_SIZE = 6;
+
+/**
  * Cursor-paginated run-history strip entries for a user's own runs, newest
  * first (SPEC.md §3 — the authenticated dashboard's run-history strip). This
  * is the first pagination pattern in this codebase — no prior convention
