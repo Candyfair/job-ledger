@@ -87,10 +87,8 @@ export function StatusBanner({ status }: { status: RunStatusPayload }) {
     setStoredCollapsed(!collapsed);
   }
 
-  const line =
-    status.status === "running"
-      ? BANNER_RUNNING_LINE
-      : bannerCompletionLine(status);
+  const running = status.status === "running";
+  const line = running ? BANNER_RUNNING_LINE : bannerCompletionLine(status);
 
   if (collapsed) {
     return (
@@ -99,7 +97,10 @@ export function StatusBanner({ status }: { status: RunStatusPayload }) {
         onClick={toggle}
         className="flex w-full items-center justify-between gap-3 rounded border border-zinc-300 bg-zinc-50 px-4 py-2 text-left text-sm text-zinc-700"
       >
-        <span>{line}</span>
+        <span className="flex items-center gap-2">
+          {running && <RunningSpinner />}
+          {line}
+        </span>
         <span className="shrink-0 text-xs font-medium text-blue-700">
           Déplier
         </span>
@@ -110,7 +111,10 @@ export function StatusBanner({ status }: { status: RunStatusPayload }) {
   return (
     <div className="flex flex-col gap-3 rounded border border-zinc-300 bg-zinc-50 p-4">
       <div className="flex items-start justify-between gap-4">
-        <p className="text-sm font-semibold text-zinc-900">{line}</p>
+        <p className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
+          {running && <RunningSpinner />}
+          {line}
+        </p>
         <button
           type="button"
           onClick={toggle}
@@ -121,5 +125,20 @@ export function StatusBanner({ status }: { status: RunStatusPayload }) {
       </div>
       <p className="text-sm text-zinc-600">{BANNER_PEDAGOGICAL_COPY}</p>
     </div>
+  );
+}
+
+/**
+ * A real scrape can run 30+ LLM/page requests across both sites and take a
+ * while (SPEC.md §7 politeness delays) — a static "Recherche en cours…"
+ * line alone gave no visible sign of life. Plain CSS via Tailwind's built-in
+ * `animate-spin`, no icon library (added 2026-09-11).
+ */
+function RunningSpinner() {
+  return (
+    <span
+      aria-hidden
+      className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-zinc-300 border-t-blue-600"
+    />
   );
 }

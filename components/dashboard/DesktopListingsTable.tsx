@@ -13,10 +13,14 @@ import { ExclusionRevealRow } from "@/components/dashboard/ExclusionRevealRow";
 const COLUMN_COUNT = 6;
 
 /**
- * Desktop table layout (design/dashboard.jpeg). Excluded rows are never
- * rendered as real `<td>` columns — they render as a single colSpan'd
- * summary/detail line, matching the mockup's compact excluded-row treatment
- * — so a `<tr>` never mixes "real columns" with "collapsed line" shapes.
+ * Desktop table layout (design/dashboard.jpeg). Folded excluded rows (the
+ * default mode) still render as a single colSpan'd summary/detail line —
+ * matching the mockup's compact treatment for a row nobody has asked to see
+ * in full yet. Kept rows, and excluded rows once the global "Revealed" mode
+ * is on, share the same real `<td>` column layout (fixed 2026-09-11 —
+ * Revealed rows previously reused that same colSpan'd block, which wrapped
+ * site/salary/open-button onto a second line instead of sitting in their
+ * normal columns).
  */
 export function DesktopListingsTable({
   groups,
@@ -84,71 +88,84 @@ function DesktopListingRow({
 }) {
   const excluded = isExcluded(listing);
 
-  if (!excluded) {
-    return (
-      <tr className="border-b border-zinc-100 align-top">
-        <td className="py-2 pr-2 text-zinc-500">
-          {formatRelativeDate(listing.datePosted)}
-        </td>
-        <td className="py-2 pr-2">
-          <div className="flex flex-col gap-1">
-            <span className="font-medium text-zinc-900">{listing.title}</span>
-            {duplicateCount > 0 && (
-              <DuplicateGroupExpander
-                count={duplicateCount}
-                expanded={groupExpanded}
-                onToggle={onToggleGroup ?? (() => {})}
-              />
-            )}
-          </div>
-        </td>
-        <td className="py-2 pr-2 text-zinc-700">{listing.company ?? "—"}</td>
-        <td className="py-2 pr-2">
-          <SiteBadge site={listing.site} />
-        </td>
-        <td className="py-2 pr-2 text-zinc-700">{listing.salaryRaw ?? "—"}</td>
-        <td className="py-2 text-right">
-          <a
-            href={listing.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-blue-700 hover:underline"
-          >
-            Ouvrir ↗
-          </a>
-        </td>
-      </tr>
-    );
-  }
-
-  if (mode === "revealed") {
+  if (excluded && mode === "folded") {
+    // "hidden" never reaches here — excluded listings are filtered out
+    // before grouping (see the DashboardClient caller).
     return (
       <tr className="border-b border-zinc-100">
         <td colSpan={COLUMN_COUNT} className="py-2">
-          <ExcludedSummaryLine listing={listing} />
-          <ExcludedListingDetail listing={listing} />
+          <ExclusionRevealRow>
+            {(revealed) =>
+              revealed ? (
+                <>
+                  <ExcludedSummaryLine listing={listing} />
+                  <ExcludedListingDetail listing={listing} />
+                </>
+              ) : (
+                <ExcludedSummaryLine listing={listing} />
+              )
+            }
+          </ExclusionRevealRow>
         </td>
       </tr>
     );
   }
 
-  // mode === "folded" — "hidden" never reaches here, excluded listings are
-  // filtered out before grouping (see the DashboardClient caller).
+  // Kept listings, and excluded listings once "Revealed" is on, share this
+  // same column layout — only the title cell's styling differs.
   return (
-    <tr className="border-b border-zinc-100">
-      <td colSpan={COLUMN_COUNT} className="py-2">
-        <ExclusionRevealRow>
-          {(revealed) =>
-            revealed ? (
-              <>
-                <ExcludedSummaryLine listing={listing} />
-                <ExcludedListingDetail listing={listing} />
-              </>
-            ) : (
-              <ExcludedSummaryLine listing={listing} />
-            )
-          }
-        </ExclusionRevealRow>
+    <tr
+      className={
+        "border-b border-zinc-100 align-top" +
+        (excluded ? " text-zinc-500" : "")
+      }
+    >
+      <td className="py-2 pr-2 text-zinc-500">
+        {formatRelativeDate(listing.datePosted)}
+      </td>
+      <td className="py-2 pr-2">
+        <div className="flex flex-col gap-1">
+          <span
+            className={
+              excluded
+                ? "font-medium text-zinc-500 line-through"
+                : "font-medium text-zinc-900"
+            }
+          >
+            {listing.title}
+          </span>
+          {excluded && (
+            <span className="text-[11px] font-medium tracking-wide text-zinc-500">
+              EXCLU · {(listing.excludedByKeyword ?? []).join(", ")}
+            </span>
+          )}
+          {duplicateCount > 0 && (
+            <DuplicateGroupExpander
+              count={duplicateCount}
+              expanded={groupExpanded}
+              onToggle={onToggleGroup ?? (() => {})}
+            />
+          )}
+        </div>
+      </td>
+      <td className={"py-2 pr-2" + (excluded ? "" : " text-zinc-700")}>
+        {listing.company ?? "—"}
+      </td>
+      <td className="py-2 pr-2">
+        <SiteBadge site={listing.site} />
+      </td>
+      <td className={"py-2 pr-2" + (excluded ? "" : " text-zinc-700")}>
+        {listing.salaryRaw ?? "—"}
+      </td>
+      <td className="py-2 text-right">
+        <a
+          href={listing.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-700 hover:underline"
+        >
+          Ouvrir ↗
+        </a>
       </td>
     </tr>
   );

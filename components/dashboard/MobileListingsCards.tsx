@@ -10,7 +10,13 @@ import { SiteBadge } from "@/components/dashboard/SiteBadge";
 import { DuplicateGroupExpander } from "@/components/dashboard/DuplicateGroupExpander";
 import { ExclusionRevealRow } from "@/components/dashboard/ExclusionRevealRow";
 
-/** Mobile card layout (design/dashboard-mobile.jpeg). */
+/**
+ * Mobile card layout (design/dashboard-mobile.jpeg). Folded excluded cards
+ * (the default mode) still render as a compact 2-line summary/detail block.
+ * Kept cards, and excluded cards once the global "Revealed" mode is on,
+ * share the same title/company/meta-row card layout (fixed 2026-09-11, same
+ * issue as the desktop table — see DesktopListingsTable).
+ */
 export function MobileListingsCards({
   groups,
   mode,
@@ -65,61 +71,73 @@ function MobileListingCard({
 }) {
   const excluded = isExcluded(listing);
 
-  if (!excluded) {
-    return (
-      <li className="flex flex-col gap-1 py-3">
-        <div className="flex items-center justify-between">
-          <span className="font-medium text-zinc-900">{listing.title}</span>
-          <span className="shrink-0 text-xs text-zinc-500">●</span>
-        </div>
-        <span className="text-sm text-zinc-700">{listing.company ?? "—"}</span>
-        <div className="flex items-center gap-3 text-sm text-zinc-500">
-          <SiteBadge site={listing.site} />
-          <span>{formatRelativeDate(listing.datePosted)}</span>
-          <span>{listing.salaryRaw ?? "—"}</span>
-          <a
-            href={listing.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="ml-auto text-blue-700 hover:underline"
-          >
-            Ouvrir ↗
-          </a>
-        </div>
-        {duplicateCount > 0 && (
-          <DuplicateGroupExpander
-            count={duplicateCount}
-            expanded={groupExpanded}
-            onToggle={onToggleGroup ?? (() => {})}
-          />
-        )}
-      </li>
-    );
-  }
-
-  if (mode === "revealed") {
+  if (excluded && mode === "folded") {
+    // "hidden" never reaches here — excluded listings are filtered out
+    // before grouping (see the DashboardClient caller).
     return (
       <li className="py-3">
-        <ExcludedSummaryLine listing={listing} />
-        <ExcludedListingDetail listing={listing} />
+        <ExclusionRevealRow>
+          {(revealed) =>
+            revealed ? (
+              <>
+                <ExcludedSummaryLine listing={listing} />
+                <ExcludedListingDetail listing={listing} />
+              </>
+            ) : (
+              <ExcludedSummaryLine listing={listing} />
+            )
+          }
+        </ExclusionRevealRow>
       </li>
     );
   }
 
+  // Kept listings, and excluded listings once "Revealed" is on, share this
+  // same card layout — only the title styling and the EXCLU line differ.
   return (
-    <li className="py-3">
-      <ExclusionRevealRow>
-        {(revealed) =>
-          revealed ? (
-            <>
-              <ExcludedSummaryLine listing={listing} />
-              <ExcludedListingDetail listing={listing} />
-            </>
-          ) : (
-            <ExcludedSummaryLine listing={listing} />
-          )
-        }
-      </ExclusionRevealRow>
+    <li className="flex flex-col gap-1 py-3">
+      <div className="flex items-center justify-between">
+        <span
+          className={
+            excluded
+              ? "font-medium text-zinc-500 line-through"
+              : "font-medium text-zinc-900"
+          }
+        >
+          {listing.title}
+        </span>
+        <span className="shrink-0 text-xs text-zinc-500">●</span>
+      </div>
+      {excluded && (
+        <span className="text-[11px] font-medium tracking-wide text-zinc-500">
+          EXCLU · {(listing.excludedByKeyword ?? []).join(", ")}
+        </span>
+      )}
+      <span
+        className={"text-sm" + (excluded ? " text-zinc-500" : " text-zinc-700")}
+      >
+        {listing.company ?? "—"}
+      </span>
+      <div className="flex items-center gap-3 text-sm text-zinc-500">
+        <SiteBadge site={listing.site} />
+        <span>{formatRelativeDate(listing.datePosted)}</span>
+        <span>{listing.salaryRaw ?? "—"}</span>
+        <a
+          href={listing.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ml-auto text-blue-700 hover:underline"
+        >
+          Ouvrir ↗
+        </a>
+      </div>
+      {duplicateCount > 0 && (
+        <DuplicateGroupExpander
+          count={duplicateCount}
+          expanded={groupExpanded}
+          onToggle={onToggleGroup ?? (() => {})}
+        />
+      )}
     </li>
   );
 }
