@@ -7,6 +7,7 @@ import { getListingsPage } from "@/lib/dashboard/listing-query";
 import { encodeCursor } from "@/lib/dashboard/cursor";
 import { getLinkedProviders } from "@/lib/account/linked-providers";
 import { AccountHeader } from "@/components/account/AccountHeader";
+import { RunClaimOnMount } from "@/components/account/RunClaimOnMount";
 import { DashboardClient } from "@/components/dashboard/DashboardClient";
 
 /**
@@ -62,6 +63,7 @@ export default async function DashboardPage({
 
     return (
       <>
+        <RunClaimOnMount />
         <AccountHeader
           variant="authenticated"
           email={session.user.email}
@@ -100,6 +102,7 @@ export default async function DashboardPage({
 
   return (
     <>
+      <RunClaimOnMount />
       <AccountHeader variant="anonymous" runId={runId} />
       <DashboardClient
         mode="anonymous-run"

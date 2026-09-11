@@ -4,6 +4,7 @@ import { jobConfig } from "@/drizzle/schema";
 import { requireSession } from "@/lib/require-session";
 import { getLinkedProviders } from "@/lib/account/linked-providers";
 import { AccountHeader } from "@/components/account/AccountHeader";
+import { RunClaimOnMount } from "@/components/account/RunClaimOnMount";
 import { HomeClient } from "./HomeClient";
 
 /**
@@ -33,6 +34,7 @@ export default async function HomePage() {
 
   return (
     <>
+      <RunClaimOnMount />
       {session ? (
         <AccountHeader
           variant="authenticated"

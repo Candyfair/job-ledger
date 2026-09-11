@@ -7,6 +7,7 @@ import { SegmentedControl } from "@/components/dashboard/SegmentedControl";
 import { ExcludedModeSelect } from "@/components/dashboard/ExcludedModeSelect";
 import { RunHistoryStrip } from "@/components/dashboard/RunHistoryStrip";
 import { StatusBanner } from "@/components/dashboard/StatusBanner";
+import { ClaimRunPrompt } from "@/components/dashboard/ClaimRunPrompt";
 import { DesktopListingsTable } from "@/components/dashboard/DesktopListingsTable";
 import { MobileListingsCards } from "@/components/dashboard/MobileListingsCards";
 import { useRunStatusPolling } from "@/components/dashboard/useRunStatusPolling";
@@ -260,6 +261,12 @@ export function DashboardClient(props: DashboardClientProps) {
         {bannerEverRunning && polledStatus && (
           <StatusBanner status={polledStatus} />
         )}
+
+        {props.mode === "anonymous-run" &&
+          polledStatus &&
+          polledStatus.status !== "running" && (
+            <ClaimRunPrompt runId={polledStatus.runId} />
+          )}
 
         {props.mode === "authenticated" && (
           <RunHistoryStrip

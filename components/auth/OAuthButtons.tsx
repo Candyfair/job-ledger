@@ -7,7 +7,21 @@ import { signIn } from "@/lib/auth-client";
 // lands directly where they create one.
 const POST_SIGN_IN_REDIRECT = "/";
 
-export function OAuthButtons() {
+type OAuthButtonsProps = {
+  /** Carried through from `?runId=` on the sign-in/sign-up page (SPEC.md §3
+   * "Claiming an anonymous run"). When present, the post-sign-in redirect
+   * gains a `claimRunId` query param instead of landing bare — `/` picks it
+   * up on mount (`RunClaimOnMount`) and calls `POST /api/scrape/claim` once
+   * the session exists. `callbackURL` is how the id survives the OAuth
+   * redirect round-trip. */
+  runId?: string;
+};
+
+export function OAuthButtons({ runId }: OAuthButtonsProps) {
+  const callbackURL = runId
+    ? `${POST_SIGN_IN_REDIRECT}?claimRunId=${encodeURIComponent(runId)}`
+    : POST_SIGN_IN_REDIRECT;
+
   return (
     <div className="flex flex-col gap-3">
       <button
@@ -15,7 +29,7 @@ export function OAuthButtons() {
         onClick={() =>
           signIn.social({
             provider: "github",
-            callbackURL: POST_SIGN_IN_REDIRECT,
+            callbackURL,
           })
         }
         className="flex h-11 items-center justify-center gap-2 rounded bg-black text-sm font-medium text-white hover:bg-zinc-800"
@@ -27,7 +41,7 @@ export function OAuthButtons() {
         onClick={() =>
           signIn.social({
             provider: "google",
-            callbackURL: POST_SIGN_IN_REDIRECT,
+            callbackURL,
           })
         }
         className="flex h-11 items-center justify-center gap-2 rounded border border-zinc-300 text-sm font-medium text-zinc-900 hover:bg-zinc-50"

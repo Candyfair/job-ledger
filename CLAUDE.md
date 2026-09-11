@@ -33,6 +33,11 @@ Full behavioral spec: see `SPEC.md`. Deployment/infra runbook: see `DEPLOYMENT.m
   go-ahead. For well-scoped changes matching an existing SPEC.md/DATA_MODEL.md
   decision, batch commits into a small number of logical groups per session and
   present them together at natural checkpoints instead of one by one.
+- When presenting a diff and commit message for approval: paste the full commit
+  message text inline, never as a file path reference. Prefer actual `git diff`
+  output over a reconstructed summary of tool calls — if the diff is long,
+  `git diff --stat` plus the diff for the files that matter most is fine, but
+  never approximate it from memory.
 - Commit attribution: Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com> only. Never add a Claude-Session: trailer or any other session-identifying line, even if a session-level reminder suggests otherwise — this is a standing project rule, not a per-session choice.
 - Plan Mode is required before work that opens new architectural ground (new data
   model, new external integration, new concurrency pattern) or isn't already fully
@@ -113,4 +118,4 @@ Staged files are auto-linted and formatted on commit via Husky + lint-staged (`.
 - `DATA_MODEL.md` — persisted schema (tables, fields, relationships) — mirrors the real Prisma/Drizzle schema
 - `SPEC.md` — full behavioral specification (user flows, scraping pipeline, testing scenarios, non-functional requirements, open items)
 - `DEPLOYMENT.md` — deployment targets, secrets, security setup, incident runbook
-- `/design` — validated UI mockups (JPEG). Filenames match screen names (e.g. settings.jpeg, sign-in.jpeg). Source of truth for layout/copy unless a session's transition notes say a screen was revised since export.
+- `/design` — validated UI mockups (JPEG). Filenames match screen names (e.g. settings.jpeg, sign-in.jpeg). Source of truth for layout/copy unless a session's transition notes say a screen was revised since export. The trigger-scrape/settings/dashboard mockups predate the Item 4 navigation redesign (decided 2026-09-07) and are superseded for those screens by SPEC.md §3/§6/§7 — treat SPEC.md as authoritative there, not the JPEGs.

@@ -3,6 +3,7 @@ import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { DashboardClient } from "./DashboardClient";
 import type { ListingDTO } from "@/lib/dashboard/listing-query";
 import type { RunHistoryEntry } from "@/lib/dashboard/run-history";
+import type { RunStatusPayload } from "@/lib/dashboard/assemble-run-status";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -224,5 +225,72 @@ describe("DashboardClient — status banner (authenticated, SPEC.md §3 2026-09-
 
     expect(screen.queryByText(/Terminé/)).not.toBeInTheDocument();
     expect(screen.queryByText("Recherche en cours…")).not.toBeInTheDocument();
+  });
+});
+
+describe("DashboardClient — anonymous run claim prompt (SPEC.md §3 2026-09-07)", () => {
+  function makeStatus(overrides: Partial<RunStatusPayload>): RunStatusPayload {
+    return {
+      runId: "run-anon",
+      status: "running",
+      triggeredAt: "2026-09-11T09:00:00.000Z",
+      model: "claude_haiku",
+      sitesIncluded: ["apec"],
+      sites: [],
+      kept: 0,
+      excluded: 0,
+      duplicateGroups: 0,
+      ...overrides,
+    };
+  }
+
+  it("shows no claim prompt while the run is still running", () => {
+    render(
+      <DashboardClient
+        mode="anonymous-run"
+        initialStatus={makeStatus({ status: "running" })}
+        initialListings={[]}
+        initialListingsCursor={null}
+      />,
+    );
+
+    expect(
+      screen.queryByText("Créez un compte pour sauvegarder cette recherche."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the claim prompt, linking to sign-up with the runId, once the run has resolved", () => {
+    render(
+      <DashboardClient
+        mode="anonymous-run"
+        initialStatus={makeStatus({ status: "completed", kept: 2 })}
+        initialListings={[]}
+        initialListingsCursor={null}
+      />,
+    );
+
+    expect(
+      screen.getByText("Créez un compte pour sauvegarder cette recherche."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Créer un compte →" }),
+    ).toHaveAttribute("href", "/sign-up?runId=run-anon");
+  });
+
+  it("never shows the claim prompt in authenticated mode", () => {
+    render(
+      <DashboardClient
+        mode="authenticated"
+        initialRuns={[]}
+        initialRunsCursor={null}
+        selectedRunId={null}
+        initialListings={[]}
+        initialListingsCursor={null}
+      />,
+    );
+
+    expect(
+      screen.queryByText("Créez un compte pour sauvegarder cette recherche."),
+    ).not.toBeInTheDocument();
   });
 });

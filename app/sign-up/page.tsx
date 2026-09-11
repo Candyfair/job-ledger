@@ -1,7 +1,13 @@
 import Link from "next/link";
 import { OAuthButtons } from "@/components/auth/OAuthButtons";
 
-export default function SignUpPage() {
+export default async function SignUpPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ runId?: string }>;
+}) {
+  const { runId } = await searchParams;
+
   return (
     <div className="flex flex-1 flex-col bg-zinc-50">
       <header className="border-b-4 border-black bg-zinc-100 px-6 py-6">
@@ -10,7 +16,7 @@ export default function SignUpPage() {
             Create an account
           </h1>
           <Link
-            href="/"
+            href={runId ? `/dashboard?runId=${runId}` : "/"}
             className="text-xs font-medium tracking-wide text-blue-700 hover:underline"
           >
             TRY IT WITHOUT AN ACCOUNT →
@@ -23,7 +29,7 @@ export default function SignUpPage() {
           Create an account to save your job searches and site preferences
           between visits.
         </p>
-        <OAuthButtons />
+        <OAuthButtons runId={runId} />
       </main>
     </div>
   );
