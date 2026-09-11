@@ -14,10 +14,13 @@ const MAX_POLL_DURATION_MS = 12 * 60 * 1000;
 /**
  * Polls `GET /api/scrape/status/:runId` only while the run's persisted status
  * is `"running"`, stopping the moment a poll resolves to a terminal status
- * or the safety cutoff elapses. Pass `null` for either argument to disable
- * polling entirely (e.g. the authenticated dashboard, which doesn't live-
- * poll its run-history strip — only the anonymous single-run view has that
- * requirement, SPEC.md §3) while still calling the hook unconditionally.
+ * or the safety cutoff elapses. Drives the status banner for both the
+ * anonymous single-run view and the authenticated dashboard's tracked run
+ * (selected, or the latest one when nothing is selected) — SPEC.md §3
+ * extended this to authenticated visitors on 2026-09-07. Pass `null` for
+ * either argument to disable polling entirely (e.g. a `runId` argument would
+ * be `null` if `DashboardClient` ever had no run to track at all) while
+ * still calling the hook unconditionally.
  */
 export function useRunStatusPolling(
   runId: string | null,

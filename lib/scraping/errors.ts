@@ -89,6 +89,22 @@ export function isBotChallengePage(bodyText: string): boolean {
 }
 
 /**
+ * The exact French sentences SPEC.md §5 requires reused verbatim wherever a
+ * site failure is surfaced to a user — `describeScrapeError` below (written
+ * to `SiteStatus.lastErrorNote`) and the dashboard's status banner
+ * (`lib/dashboard/banner-copy.ts`, SPEC.md §3). Kept as the single source so
+ * the two call sites can never drift apart on wording.
+ */
+export function botChallengeMessage(site: Site): string {
+  return `Accès à ${SITE_LABELS[site]} bloqué (protection anti-bot) — le site nécessite une vérification manuelle.`;
+}
+
+/** See {@link botChallengeMessage} — same rationale, the `markup_broken` sentence. */
+export function markupBrokenMessage(site: Site): string {
+  return `Impossible de récupérer les résultats de ${SITE_LABELS[site]} — le site a peut-être changé et doit être vérifié.`;
+}
+
+/**
  * Classifies an error thrown out of a site scrape into the failure cause and
  * the French, user-facing "needs review" sentence to persist on
  * `SiteStatus` (SPEC.md §5). `ScrapeBlockedError` → `bot_challenge`;
@@ -105,15 +121,8 @@ export function describeScrapeError(
   error: unknown,
   site: Site,
 ): { cause: SiteFailureCause; note: string } {
-  const label = SITE_LABELS[site];
   if (error instanceof ScrapeBlockedError) {
-    return {
-      cause: "bot_challenge",
-      note: `Accès à ${label} bloqué (protection anti-bot) — le site nécessite une vérification manuelle.`,
-    };
+    return { cause: "bot_challenge", note: botChallengeMessage(site) };
   }
-  return {
-    cause: "markup_broken",
-    note: `Impossible de récupérer les résultats de ${label} — le site a peut-être changé et doit être vérifié.`,
-  };
+  return { cause: "markup_broken", note: markupBrokenMessage(site) };
 }

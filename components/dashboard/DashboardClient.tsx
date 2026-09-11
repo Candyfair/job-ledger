@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { SegmentedControl } from "@/components/dashboard/SegmentedControl";
 import { ExcludedModeSelect } from "@/components/dashboard/ExcludedModeSelect";
 import { RunHistoryStrip } from "@/components/dashboard/RunHistoryStrip";
+import { StatusBanner } from "@/components/dashboard/StatusBanner";
 import { DesktopListingsTable } from "@/components/dashboard/DesktopListingsTable";
 import { MobileListingsCards } from "@/components/dashboard/MobileListingsCards";
 import { useRunStatusPolling } from "@/components/dashboard/useRunStatusPolling";
@@ -52,8 +53,8 @@ type DashboardClientProps = AuthenticatedProps | AnonymousRunProps;
  * `runId`) redirects to `/` in `app/dashboard/page.tsx` before this
  * component ever renders. Owns exclusion-mode/duplicate-expand UI state
  * (client-side only, resets on reload per SPEC.md §3), the "load more"
- * pagination for both runs and listings, and — anonymous mode only —
- * status polling.
+ * pagination for both runs and listings, and status polling / the status
+ * banner — now active for both modes (SPEC.md §3, decided 2026-09-07).
  */
 export function DashboardClient(props: DashboardClientProps) {
   const router = useRouter();
@@ -77,24 +78,83 @@ export function DashboardClient(props: DashboardClientProps) {
   );
   const [loadingMoreRuns, setLoadingMoreRuns] = useState(false);
 
-  const anonymousInitialStatus =
-    props.mode === "anonymous-run" ? props.initialStatus : null;
-  const polledStatus = useRunStatusPolling(
-    anonymousInitialStatus?.runId ?? null,
-    anonymousInitialStatus,
+  // The run whose listings this view is scoped to, for "load more" paging:
+  // the `?runId=` run in anonymous mode, the selected run (if any) when
+  // authenticated. `null` means the authenticated all-time aggregate, which
+  // `/api/listings` scopes to the session owner instead.
+  const scopedRunId =
+    props.mode === "anonymous-run"
+      ? props.initialStatus.runId
+      : props.selectedRunId;
+
+  // The run the status banner/polling track. Anonymous: always the single
+  // `?runId=` run. Authenticated: the selected run — or, with nothing
+  // selected (the all-time aggregate), the most recent one. That fallback
+  // matters because the post-trigger redirect for an authenticated run is
+  // bare `/dashboard` (SPEC.md §3 step 4, no `?runId=`, unlike the anonymous
+  // redirect) — without it, a visitor landing on the all-time view right
+  // after triggering would never see progress on the run they just started.
+  const bannerRunId =
+    props.mode === "anonymous-run"
+      ? props.initialStatus.runId
+      : (props.selectedRunId ?? runs[0]?.runId ?? null);
+  const bannerInitialStatus: RunStatusPayload | null =
+    props.mode === "anonymous-run"
+      ? props.initialStatus
+      : (runs.find((r) => r.runId === bannerRunId) ?? null);
+
+  const polledStatus = useRunStatusPolling(bannerRunId, bannerInitialStatus);
+
+  // Tracks the tracked run's previous status so a "running → resolved"
+  // transition can be detected exactly once. Deliberately `useState`, not a
+  // `useRef`: this codebase's lint config (`react-hooks/refs`) disallows
+  // reading/writing a ref during render, and both derivations below are
+  // pure — no I/O — so they belong in the render-phase "storing information
+  // from previous renders" pattern, not a `useEffect`
+  // (https://react.dev/reference/react/useState#storing-information-from-previous-renders).
+  const [previousBannerStatus, setPreviousBannerStatus] = useState(
+    bannerInitialStatus?.status,
+  );
+  // Whether to render the banner at all: while the tracked run is running,
+  // or once it has been observed running during this page view — monotonic,
+  // never reset, so the banner doesn't disappear the instant a run resolves
+  // (see StatusBanner). A historical run selected from the strip that was
+  // already resolved before this mount never sets this and never shows a
+  // banner — the run-history strip's status dot already covers that case.
+  const [bannerEverRunning, setBannerEverRunning] = useState(
+    bannerInitialStatus?.status === "running",
   );
 
-  // Once an anonymous run leaves "running", refresh listings once — this
-  // does not keep re-fetching listings on every subsequent poll tick, only
-  // the single transition out of "running".
-  const previousPollStatusRef = useRef(anonymousInitialStatus?.status);
+  if (polledStatus && polledStatus.status !== previousBannerStatus) {
+    // Patches the tracked run's entry in the run-history strip the moment it
+    // leaves "running", so the strip's status dot/label reflect the
+    // resolved run without a full reload.
+    if (previousBannerStatus === "running" && props.mode === "authenticated") {
+      setRuns((prev) =>
+        prev.map((r) => (r.runId === polledStatus.runId ? polledStatus : r)),
+      );
+    }
+    if (polledStatus.status === "running") setBannerEverRunning(true);
+    setPreviousBannerStatus(polledStatus.status);
+  }
+
+  // Once the tracked run leaves "running", refresh listings once (scoped the
+  // same way "load more" is — the whole all-time aggregate when nothing is
+  // selected, not just the one run). This *is* effect territory — actual
+  // network I/O, unlike the render-phase updates above. Its own ref is fine
+  // here: it's only ever read/written inside the effect callback, never
+  // during render. Does not keep re-fetching on every subsequent poll tick,
+  // only the single transition out of "running".
+  const previousFetchStatusRef = useRef(bannerInitialStatus?.status);
   useEffect(() => {
-    if (props.mode !== "anonymous-run" || !polledStatus) return;
-    const wasRunning = previousPollStatusRef.current === "running";
-    previousPollStatusRef.current = polledStatus.status;
+    if (!polledStatus) return;
+    const wasRunning = previousFetchStatusRef.current === "running";
+    previousFetchStatusRef.current = polledStatus.status;
     if (!wasRunning || polledStatus.status === "running") return;
 
-    fetch(`/api/listings?runId=${polledStatus.runId}`)
+    const params = new URLSearchParams();
+    if (scopedRunId) params.set("runId", scopedRunId);
+    fetch(`/api/listings?${params.toString()}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (!data) return;
@@ -102,28 +162,16 @@ export function DashboardClient(props: DashboardClientProps) {
         setListingsCursor(data.nextCursor);
       })
       .catch(() => {});
-  }, [polledStatus, props.mode]);
+  }, [polledStatus, scopedRunId]);
 
-  // The run whose listings this view is scoped to, for "load more" paging:
-  // the `?runId=` run in anonymous mode, the selected run (if any) when
-  // authenticated. `null` means the authenticated all-time aggregate, which
-  // `/api/listings` scopes to the session owner instead.
-  const runId =
-    props.mode === "anonymous-run"
-      ? props.initialStatus.runId
-      : props.selectedRunId;
-
-  const currentRunSummary: RunStatusPayload | null =
-    props.mode === "anonymous-run"
-      ? polledStatus
-      : (runs.find((r) => r.runId === props.selectedRunId) ?? null);
+  const currentRunSummary = polledStatus;
 
   async function loadMoreListings() {
     if (!listingsCursor || loadingMoreListings) return;
     setLoadingMoreListings(true);
     try {
       const params = new URLSearchParams({ cursor: listingsCursor });
-      if (runId) params.set("runId", runId);
+      if (scopedRunId) params.set("runId", scopedRunId);
       const res = await fetch(`/api/listings?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
@@ -209,6 +257,10 @@ export function DashboardClient(props: DashboardClientProps) {
       </header>
 
       <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-6 py-8">
+        {bannerEverRunning && polledStatus && (
+          <StatusBanner status={polledStatus} />
+        )}
+
         {props.mode === "authenticated" && (
           <RunHistoryStrip
             runs={runs}

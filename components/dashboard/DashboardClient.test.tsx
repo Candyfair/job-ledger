@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { DashboardClient } from "./DashboardClient";
 import type { ListingDTO } from "@/lib/dashboard/listing-query";
+import type { RunHistoryEntry } from "@/lib/dashboard/run-history";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -171,5 +172,57 @@ describe("DashboardClient — run-scoped listing view", () => {
     // Two listings, one group, one visible row.
     expect(screen.getByText(/1 annonces/)).toBeInTheDocument();
     expect(screen.getByText(/1 groupes de doublons/)).toBeInTheDocument();
+  });
+});
+
+describe("DashboardClient — status banner (authenticated, SPEC.md §3 2026-09-07)", () => {
+  function makeRun(overrides: Partial<RunHistoryEntry>): RunHistoryEntry {
+    return {
+      runId: "run-x",
+      status: "completed",
+      triggeredAt: "2026-09-10T09:00:00.000Z",
+      model: "claude_haiku",
+      sitesIncluded: ["apec"],
+      sites: [],
+      kept: 0,
+      excluded: 0,
+      duplicateGroups: 0,
+      ...overrides,
+    };
+  }
+
+  it("falls back to the latest run when nothing is selected and it's running — the post-trigger redirect (bare /dashboard) has no ?runId=", () => {
+    const latest = makeRun({ runId: "run-latest", status: "running" });
+
+    render(
+      <DashboardClient
+        mode="authenticated"
+        initialRuns={[latest]}
+        initialRunsCursor={null}
+        selectedRunId={null}
+        initialListings={[]}
+        initialListingsCursor={null}
+      />,
+    );
+
+    expect(screen.getByText("Recherche en cours…")).toBeInTheDocument();
+  });
+
+  it("shows no banner for a resolved historical run picked from the strip that was never observed running", () => {
+    const historical = makeRun({ runId: "run-old", status: "completed" });
+
+    render(
+      <DashboardClient
+        mode="authenticated"
+        initialRuns={[historical]}
+        initialRunsCursor={null}
+        selectedRunId="run-old"
+        initialListings={[]}
+        initialListingsCursor={null}
+      />,
+    );
+
+    expect(screen.queryByText(/Terminé/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Recherche en cours…")).not.toBeInTheDocument();
   });
 });
