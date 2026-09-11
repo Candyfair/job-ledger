@@ -5,6 +5,8 @@ import { getRunStatus } from "@/lib/dashboard/get-run-status";
 import { getOwnedRun } from "@/lib/dashboard/run-ownership";
 import { getListingsPage } from "@/lib/dashboard/listing-query";
 import { encodeCursor } from "@/lib/dashboard/cursor";
+import { getLinkedProviders } from "@/lib/account/linked-providers";
+import { AccountHeader } from "@/components/account/AccountHeader";
 import { DashboardClient } from "@/components/dashboard/DashboardClient";
 
 /**
@@ -56,20 +58,30 @@ export default async function DashboardPage({
         : { ownerUserId: session.user.id },
     );
 
+    const providers = await getLinkedProviders(session.user.id);
+
     return (
-      <DashboardClient
-        // Keyed by the selected run so switching runs remounts the client with
-        // the freshly SSR-fetched, run-scoped listings — its listing state is
-        // seeded from props once and never re-synced in place (SPEC.md §3:
-        // client view state resets on reload anyway).
-        key={selectedRunId ?? "all"}
-        mode="authenticated"
-        initialRuns={runs}
-        initialRunsCursor={encodeCursor(runsCursor)}
-        selectedRunId={selectedRunId}
-        initialListings={listings}
-        initialListingsCursor={encodeCursor(listingsCursor)}
-      />
+      <>
+        <AccountHeader
+          variant="authenticated"
+          email={session.user.email}
+          image={session.user.image ?? null}
+          providers={providers}
+        />
+        <DashboardClient
+          // Keyed by the selected run so switching runs remounts the client
+          // with the freshly SSR-fetched, run-scoped listings — its listing
+          // state is seeded from props once and never re-synced in place
+          // (SPEC.md §3: client view state resets on reload anyway).
+          key={selectedRunId ?? "all"}
+          mode="authenticated"
+          initialRuns={runs}
+          initialRunsCursor={encodeCursor(runsCursor)}
+          selectedRunId={selectedRunId}
+          initialListings={listings}
+          initialListingsCursor={encodeCursor(listingsCursor)}
+        />
+      </>
     );
   }
 
@@ -87,11 +99,14 @@ export default async function DashboardPage({
   });
 
   return (
-    <DashboardClient
-      mode="anonymous-run"
-      initialStatus={status}
-      initialListings={listings}
-      initialListingsCursor={encodeCursor(listingsCursor)}
-    />
+    <>
+      <AccountHeader variant="anonymous" runId={runId} />
+      <DashboardClient
+        mode="anonymous-run"
+        initialStatus={status}
+        initialListings={listings}
+        initialListingsCursor={encodeCursor(listingsCursor)}
+      />
+    </>
   );
 }

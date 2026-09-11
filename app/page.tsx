@@ -2,6 +2,8 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { jobConfig } from "@/drizzle/schema";
 import { requireSession } from "@/lib/require-session";
+import { getLinkedProviders } from "@/lib/account/linked-providers";
+import { AccountHeader } from "@/components/account/AccountHeader";
 import { HomeClient } from "./HomeClient";
 
 /**
@@ -27,15 +29,29 @@ export default async function HomePage() {
         .orderBy(jobConfig.createdAt)
     : [];
 
+  const providers = session ? await getLinkedProviders(session.user.id) : [];
+
   return (
-    <HomeClient
-      isAuthenticated={session !== null}
-      initialJobConfigs={jobConfigs.map((c) => ({
-        id: c.id,
-        title: c.title,
-        excludedKeywords: c.excludedKeywords,
-        location: c.location,
-      }))}
-    />
+    <>
+      {session ? (
+        <AccountHeader
+          variant="authenticated"
+          email={session.user.email}
+          image={session.user.image ?? null}
+          providers={providers}
+        />
+      ) : (
+        <AccountHeader variant="anonymous" />
+      )}
+      <HomeClient
+        isAuthenticated={session !== null}
+        initialJobConfigs={jobConfigs.map((c) => ({
+          id: c.id,
+          title: c.title,
+          excludedKeywords: c.excludedKeywords,
+          location: c.location,
+        }))}
+      />
+    </>
   );
 }
